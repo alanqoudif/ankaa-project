@@ -1,0 +1,21 @@
+# Ignore sensitive information
+.env
+
+# Project specific files
+context.md
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit
+.streamlit/
+
+# Vector DB files
+./omani_laws/
+omani_laws/
+
+# OS specific
+.DS_Store

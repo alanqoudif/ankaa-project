@@ -1,0 +1,136 @@
+/* ShariaAI - Omani Legal Assistant Styles */
+
+/* Global Styles */
+body {
+    font-family: 'Noto Sans Arabic', Arial, sans-serif;
+    color: #333;
+}
+
+/* Header Styling */
+.stApp header {
+    background-color: #0A4D68;
+    color: white;
+}
+
+/* Sidebar Styling */
+.sidebar .sidebar-content {
+    background-color: #f9f9f9;
+    padding: 20px;
+}
+
+/* Custom Button */
+.custom-button {
+    background-color: #0A4D68;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: none;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.custom-button:hover {
+    background-color: #05BFDB;
+}
+
+/* Message Styling */
+.chat-message {
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+.user-message {
+    background-color: #e6f7ff;
+    border-left: 5px solid #05BFDB;
+}
+
+.assistant-message {
+    background-color: #f0f0f0;
+    border-left: 5px solid #0A4D68;
+}
+
+/* Card Styling */
+.card {
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    background-color: white;
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #0A4D68;
+}
+
+/* Citation Styling */
+.citation {
+    background-color: #f9f9f9;
+    border-left: 3px solid #05BFDB;
+    padding: 10px;
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+/* Document Preview Pane */
+.document-preview {
+    border: 1px solid #ddd;
+    padding: 20px;
+    background-color: white;
+    height: 600px;
+    overflow-y: auto;
+}
+
+/* Microinteractions */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+.pulse {
+    animation: pulse 1.5s infinite;
+}
+
+/* Accessibility - High Contrast Mode */
+.high-contrast {
+    color: white;
+    background-color: black;
+}
+
+.high-contrast-text {
+    color: yellow;
+}
+
+/* RTL Support */
+.rtl {
+    direction: rtl;
+    text-align: right;
+}
+
+/* Mobile Responsive Adjustments */
+@media (max-width: 768px) {
+    .card {
+        padding: 15px;
+    }
+    
+    .chat-message {
+        padding: 10px;
+    }
+}
