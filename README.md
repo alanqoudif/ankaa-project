@@ -1,6 +1,6 @@
 # ShariaAI - Omani Legal Assistant
 
-![ShariaAI Logo](/Users/faisalalanqoudi/anka-project/pho.png)
+![ShariaAI Logo](./pho.png)
 
 ShariaAI is an intelligent legal assistant that helps users navigate Omani laws through natural language interactions. The system provides document search, summarization, comparison, and generation capabilities while strictly adhering to official legal texts.
 
