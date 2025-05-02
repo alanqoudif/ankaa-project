@@ -11,6 +11,8 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from utils.env_loader import load_env_vars
 from utils.section_navigator import SectionNavigator
+from utils.audio_processor import AudioProcessor
+from utils.legal_comparison import LegalComparison
 
 # Set page configuration
 st.set_page_config(
@@ -43,6 +45,10 @@ if "data_loaded" not in st.session_state:
     st.session_state.data_loaded = False
 if "section_navigator" not in st.session_state:
     st.session_state.section_navigator = SectionNavigator()
+if "audio_processor" not in st.session_state:
+    st.session_state.audio_processor = AudioProcessor()
+if "legal_comparison" not in st.session_state:
+    st.session_state.legal_comparison = LegalComparison()
 if "current_tab" not in st.session_state:
     st.session_state.current_tab = "Chat"
 
@@ -250,7 +256,7 @@ with st.sidebar:
 
 
 # Create tabs for different features
-tabs = st.tabs(["Chat", "Section Navigator", "Document Browser"])
+tabs = st.tabs(["Chat", "Section Navigator", "Document Browser", "Voice Query", "Provision Comparison"])
 
 # Tab 1: Chat Interface
 with tabs[0]:
@@ -358,6 +364,70 @@ with tabs[2]:
         
         # Add a button to manually load documents
         if st.button("Load Documents", key="load_docs_browser"):
+            load_legal_documents()
+
+# Tab 4: Voice Query (Level 3 Feature)
+with tabs[3]:
+    st.header("Voice Query")
+    st.write("Ask questions about Omani law using your voice")
+    
+    # Voice query interface
+    voice_query = st.session_state.audio_processor.get_voice_query()
+    
+    if voice_query:
+        # Add voice query to chat history
+        st.session_state.messages.append({"role": "user", "content": voice_query})
+        
+        # Process the voice query
+        with st.spinner("Processing your question..."):
+            if st.session_state.qa_chain:
+                try:
+                    # Use invoke instead of run to handle multiple return values
+                    result = st.session_state.qa_chain.invoke(voice_query)
+                    
+                    # Extract the answer from the result
+                    if isinstance(result, dict) and 'result' in result:
+                        response = result['result']
+                        
+                        # Show source documents if available
+                        if 'source_documents' in result and result['source_documents']:
+                            sources = result['source_documents']
+                            response += "\n\n**Sources:**"
+                            for i, doc in enumerate(sources[:3]):  # Show up to 3 sources
+                                source = doc.metadata.get('source', 'Unknown')
+                                response += f"\n- {os.path.basename(source)}"
+                    else:
+                        response = str(result)
+                    
+                    # Display the response
+                    st.markdown("### Answer:")
+                    st.markdown(response)
+                    
+                    # Add to chat history
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    
+                except Exception as e:
+                    error_msg = f"Error generating response: {str(e)}"
+                    st.error(error_msg)
+            else:
+                st.warning("Please load documents first to enable question answering.")
+
+# Tab 5: Provision Comparison (Level 3 Feature)
+with tabs[4]:
+    st.header("Legal Provision Comparison")
+    st.write("Compare different legal provisions and see highlighted differences")
+    
+    if st.session_state.data_loaded:
+        # Get PDF document paths for comparison
+        pdf_files = [os.path.join(LEGAL_FILES_DIR, f) for f in os.listdir(LEGAL_FILES_DIR) if f.endswith('.pdf')]
+        
+        # Render the comparison interface
+        st.session_state.legal_comparison.render_comparison_interface(pdf_files)
+    else:
+        st.warning("Please load documents first to use the comparison feature.")
+        
+        # Add a button to manually load documents
+        if st.button("Load Documents", key="load_docs_comparison"):
             load_legal_documents()
 
 # Footer
