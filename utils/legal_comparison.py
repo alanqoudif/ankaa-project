@@ -39,7 +39,7 @@ class LegalComparison:
         
         Args:
             document_path: Path to the PDF document
-            query: Query to find relevant provisions (e.g., "Article 5", "inheritance")
+            query: Query to find relevant provisions (e.g., "Article 5", "inheritance", "الجزاء")
             
         Returns:
             List of dictionaries with extracted provisions, including:
@@ -55,47 +55,124 @@ class LegalComparison:
             doc = fitz.open(document_path)
             
             # Prepare regex patterns for finding articles and sections
-            article_pattern = re.compile(r'(Article|المادة)\s+(\d+[a-zA-Z]*)', re.IGNORECASE)
+            # Enhanced to handle both English and Arabic article references
+            article_pattern = re.compile(r'(Article|المادة|مادة)\s+(\d+[a-zA-Z]*)', re.IGNORECASE | re.UNICODE)
+            
+            # Handle Arabic numerals as well
+            arabic_numerals = {'٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', 
+                               '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9'}
+            
+            # Convert query to handle both English and Arabic
+            query_lower = query.lower()
+            
+            # Check if the query has Arabic chars to use appropriate search method
+            has_arabic = any(ord(c) > 127 for c in query)
+            
+            # Additional Arabic keywords related to penalties/criminal law
+            arabic_penalty_terms = ['جزاء', 'عقوبة', 'عقوبات', 'جريمة', 'جنائي', 'جناية']
             
             # Process each page
             for page_num, page in enumerate(doc):
                 text = page.get_text()
+                text_lower = text.lower()
                 
-                # Check if the query terms are in the text
-                if query.lower() in text.lower():
+                # Determine if this page is relevant to the query
+                page_is_relevant = False
+                
+                if has_arabic:
+                    # For Arabic queries, check for exact matches and related legal terms
+                    if query_lower in text_lower:
+                        page_is_relevant = True
+                    elif any(term in text_lower for term in arabic_penalty_terms) and \
+                         query_lower in arabic_penalty_terms:
+                        page_is_relevant = True
+                else:
+                    # For English queries
+                    if query_lower in text_lower:
+                        page_is_relevant = True
+                
+                if page_is_relevant:
                     # Find article references
-                    matches = article_pattern.finditer(text)
+                    matches = list(article_pattern.finditer(text))
                     
-                    for match in matches:
-                        article_type = match.group(1)  # "Article" or "المادة"
-                        article_num = match.group(2)   # The article number
+                    if matches:
+                        for i, match in enumerate(matches):
+                            article_prefix = match.group(1)  # "Article" or "المادة"
+                            article_num = match.group(2)    # Article number
+                            article_id = f"{article_prefix} {article_num}"
+                            
+                            # Extract the paragraph/section content following the article reference
+                            start_pos = match.end()
+                            
+                            # Determine end position - either next article or about 1500 chars
+                            if i < len(matches) - 1:
+                                # End at the start of the next article
+                                end_pos = matches[i+1].start()
+                            else:
+                                # If no next article, take a reasonable chunk of text
+                                end_pos = min(start_pos + 1500, len(text))
+                            
+                            section_text = text[start_pos:end_pos].strip()
+                            
+                            # Check if section contains query or related terms
+                            section_relevant = False
+                            if query_lower in section_text.lower():
+                                section_relevant = True
+                            elif has_arabic and any(term in section_text.lower() for term in arabic_penalty_terms):
+                                section_relevant = True
+                            
+                            if section_relevant:
+                                results.append({
+                                    "source": document_path,
+                                    "document": os.path.basename(document_path),
+                                    "page": page_num,
+                                    "article": article_id,
+                                    "section": "",  # No specific section identifier
+                                    "text": section_text
+                                })
+                    
+                    # If no article matches but the page contains the query, include relevant excerpt
+                    if not results or not any(r["page"] == page_num for r in results):
+                        # Find the most relevant paragraph containing the query
+                        paragraphs = text.split('\n\n')
+                        relevant_paragraphs = []
                         
-                        # Find the start position of this article
-                        start_pos = match.start()
+                        for para in paragraphs:
+                            if query_lower in para.lower() or \
+                               (has_arabic and any(term in para.lower() for term in arabic_penalty_terms)):
+                                relevant_paragraphs.append(para)
                         
-                        # Find the next article to determine the end of this article
-                        next_match = article_pattern.search(text[start_pos + 1:])
-                        if next_match:
-                            end_pos = start_pos + 1 + next_match.start()
-                            article_text = text[start_pos:end_pos].strip()
+                        if relevant_paragraphs:
+                            # Join the relevant paragraphs with some context
+                            context = '\n\n'.join(relevant_paragraphs)
+                            results.append({
+                                "source": document_path,
+                                "document": os.path.basename(document_path),
+                                "page": page_num,
+                                "article": f"Page {page_num+1}",
+                                "section": "",
+                                "text": context
+                            })
                         else:
-                            # If no next article, take the rest of the page
-                            article_text = text[start_pos:].strip()
-                        
-                        # Add to results
-                        results.append({
-                            "text": article_text,
-                            "page": page_num + 1,  # 1-based page numbering
-                            "article": f"{article_type} {article_num}",
-                            "document": os.path.basename(document_path)
-                        })
-            
-            # Close the document
-            doc.close()
-            
+                            # If no specific paragraph is found, include part of the page
+                            # Find position of query in text
+                            query_pos = text_lower.find(query_lower)
+                            if query_pos >= 0:
+                                # Take text around the query position
+                                start = max(0, query_pos - 300)
+                                end = min(len(text), query_pos + 700)
+                                context = text[start:end]
+                                results.append({
+                                    "source": document_path,
+                                    "document": os.path.basename(document_path),
+                                    "page": page_num,
+                                    "article": f"Page {page_num+1}",
+                                    "section": "",
+                                    "text": context
+                                })
         except Exception as e:
-            st.error(f"Error extracting provision: {str(e)}")
-        
+            st.error(f"Error extracting provisions from {document_path}: {str(e)}")
+            
         return results
     
     def find_legal_provisions(self, document_paths: List[str], query: str) -> List[Dict[str, str]]:

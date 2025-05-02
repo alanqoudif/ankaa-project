@@ -211,9 +211,29 @@ def load_legal_documents():
                 st.error(f"No PDF files found in {LEGAL_FILES_DIR}")
                 return
             
-            # Process first 5 files for faster initial loading (can be adjusted)
+            # Process all files in the legal directory
+            # First, prioritize loading any criminal/penal code documents
+            criminal_law_keywords = ['جزاء', 'جنائي', 'عقوبات', 'penal', 'criminal']
+            
+            # Sort files to prioritize criminal law documents
+            priority_files = []
+            regular_files = []
+            
+            for pdf_file in pdf_files:
+                file_name = os.path.basename(pdf_file).lower()
+                if any(keyword in file_name for keyword in criminal_law_keywords):
+                    priority_files.append(pdf_file)
+                else:
+                    regular_files.append(pdf_file)
+            
+            # Combine lists with priority files first
+            sorted_pdf_files = priority_files + regular_files
+            
+            # Process files, loading at least 20 documents or all priority files
+            max_docs = 30  # Increased from 5 to 30 for better coverage
             all_documents = []
-            for pdf_file in pdf_files[:5]:  # Limiting to 5 files initially for speed
+            
+            for pdf_file in sorted_pdf_files[:max_docs]:  # Load more documents
                 documents = process_law_pdf(pdf_file)
                 if documents:
                     all_documents.extend(documents)

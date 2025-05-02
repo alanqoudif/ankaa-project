@@ -53,8 +53,8 @@ class AudioProcessor:
         
         # Create a queue to store audio frames
         audio_frames = queue.Queue()
-        recording_started = False
-        recording_stopped = False
+        recording_started = [False]  # Using list to modify in nested function
+        recording_complete = [False]  # Flag to indicate recording is complete
         transcription_result = [None]  # Use a list to store the result across callbacks
         
         # Define callback functions for WebRTC
@@ -63,9 +63,8 @@ class AudioProcessor:
             return frame
         
         def audio_frame_callback(frame):
-            nonlocal recording_started
             # Mark that we've started recording
-            recording_started = True
+            recording_started[0] = True
             # Add the audio frame to the queue
             audio_frames.put(frame)
             return frame
@@ -83,15 +82,23 @@ class AudioProcessor:
             video_frame_callback=video_frame_callback,
             audio_frame_callback=audio_frame_callback,
             media_stream_constraints={"video": False, "audio": True},
+            async_processing=True,
         )
         
+        # Instructions to the user
         if webrtc_ctx.state.playing:
-            st.info("Recording... Speak your legal query and then click 'Stop' when finished.")
+            st.info("🎤 Recording... Speak your legal query and then click 'Stop' when finished.")
         
-        # When the user stops the recording
-        if not webrtc_ctx.state.playing and recording_started and not recording_stopped:
-            st.success("Recording stopped. Processing audio...")
-            recording_stopped = True
+        # Create a placeholder for the transcription status
+        status_placeholder = st.empty()
+        
+        # Create a process button to handle audio processing separately from WebRTC stream
+        process_button = st.button("Process Recording", disabled=not recording_started[0] or recording_complete[0])
+        
+        # When the user explicitly requests processing
+        if process_button or (recording_started[0] and not webrtc_ctx.state.playing and not recording_complete[0]):
+            status_placeholder.info("Processing audio... This may take a moment.")
+            recording_complete[0] = True
             
             # Save all audio frames to a temporary file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -105,35 +112,57 @@ class AudioProcessor:
                         frames.append(audio_frames.get())
                     
                     if frames:
+                        st.info(f"Processing {len(frames)} audio frames...")
+                        
                         # Create a new audio container
                         container = av.open(temp_filename, mode='w')
                         stream = container.add_stream('pcm_s16le', rate=48000, channels=1)
                         
                         # Write the frames to the container
                         for frame in frames:
-                            for packet in stream.encode(frame):
-                                container.mux(packet)
+                            try:
+                                for packet in stream.encode(frame):
+                                    container.mux(packet)
+                            except Exception as e:
+                                st.warning(f"Skipped a frame: {str(e)}")
+                        
+                        # Flush any remaining packets
+                        for packet in stream.encode(None):
+                            container.mux(packet)
                         
                         # Close the container
                         container.close()
                         
-                        # Transcribe the recorded audio
-                        transcription = self.transcribe_audio(temp_filename)
-                        transcription_result[0] = transcription
-                        
-                        # Display the audio for playback
-                        with open(temp_filename, "rb") as audio_file:
-                            audio_bytes = audio_file.read()
-                            st.audio(audio_bytes, format="audio/wav")
+                        # Check if the file was created successfully
+                        if os.path.exists(temp_filename) and os.path.getsize(temp_filename) > 0:
+                            # Display the audio for playback
+                            with open(temp_filename, "rb") as audio_file:
+                                audio_bytes = audio_file.read()
+                                st.audio(audio_bytes, format="audio/wav")
+                            
+                            # Transcribe the recorded audio
+                            status_placeholder.info("Transcribing audio with Whisper...")
+                            transcription = self.transcribe_audio(temp_filename)
+                            
+                            if transcription and transcription.strip():
+                                transcription_result[0] = transcription
+                                status_placeholder.success("Transcription successful!")
+                            else:
+                                status_placeholder.error("Transcription failed. Please try again and speak clearly.")
+                        else:
+                            status_placeholder.error("Failed to create audio file. Please try again.")
+                    else:
+                        status_placeholder.warning("No audio recorded. Please try again.")
                 except Exception as e:
-                    st.error(f"Error processing audio: {str(e)}")
+                    status_placeholder.error(f"Error processing audio: {str(e)}")
                     logging.error(f"Error processing audio: {str(e)}")
                 finally:
                     # Clean up the temporary file
                     try:
-                        os.unlink(temp_filename)
-                    except:
-                        pass
+                        if os.path.exists(temp_filename):
+                            os.unlink(temp_filename)
+                    except Exception as cleanup_error:
+                        logging.error(f"Error cleaning up temp file: {str(cleanup_error)}")
         
         return transcription_result[0]
     
@@ -164,11 +193,14 @@ class AudioProcessor:
         st.subheader("Voice Query")
         st.write("Use the microphone below to record your legal question")
         
-        # Record audio and get transcription directly
+        # Record audio and get transcription
         transcription = self.record_and_transcribe()
         
-        if transcription:
-            st.success("Transcription successful!")
+        if transcription and transcription.strip():
             st.write(f"**Your question**: {transcription}")
+            
+            # Add a button to confirm using this transcription for query
+            if st.button("Submit this question"):
+                return transcription
         
-        return transcription
+        return None
