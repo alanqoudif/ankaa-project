@@ -204,7 +204,7 @@ class DocumentDrafter:
         SIGNATURES:
         
         ________________________            ________________________
-        [{params.get('party1_name', 'First Party')}]                      [{params.get('party2_name', 'Second Party')}]
+        {params.get('party1_name', 'First Party')}                      {params.get('party2_name', 'Second Party')}
         
         Date: ___________________            Date: ___________________
         
