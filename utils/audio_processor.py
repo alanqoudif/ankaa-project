@@ -4,7 +4,12 @@ import tempfile
 import streamlit as st
 import numpy as np
 import whisper
-from pydub import AudioSegment
+import time
+import queue
+from threading import Thread
+import av
+import logging
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from utils.env_loader import load_env_vars
 
 # Load environment variables
@@ -43,29 +48,94 @@ class AudioProcessor:
             return ""
     
     def record_and_transcribe(self):
-        """Record audio from the microphone and transcribe it."""
-        st.write("📝 Recording audio... Speak your legal query")
+        """Record audio from the microphone and transcribe it using WebRTC."""
+        st.write("Recording audio... Speak your legal query")
         
-        # Use streamlit's audio recorder component
-        audio_bytes = st.audio_recorder()
+        # Create a queue to store audio frames
+        audio_frames = queue.Queue()
+        recording_started = False
+        recording_stopped = False
+        transcription_result = [None]  # Use a list to store the result across callbacks
         
-        if audio_bytes is not None:
-            st.audio(audio_bytes, format="audio/wav")
-            st.success("✅ Audio recorded successfully!")
+        # Define callback functions for WebRTC
+        def video_frame_callback(frame):
+            # Just return the frame, we don't process video
+            return frame
+        
+        def audio_frame_callback(frame):
+            nonlocal recording_started
+            # Mark that we've started recording
+            recording_started = True
+            # Add the audio frame to the queue
+            audio_frames.put(frame)
+            return frame
+        
+        # Configure WebRTC
+        rtc_config = RTCConfiguration(
+            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+        )
+        
+        # Create the WebRTC streamer
+        webrtc_ctx = webrtc_streamer(
+            key="voice-query",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=rtc_config,
+            video_frame_callback=video_frame_callback,
+            audio_frame_callback=audio_frame_callback,
+            media_stream_constraints={"video": False, "audio": True},
+        )
+        
+        if webrtc_ctx.state.playing:
+            st.info("Recording... Speak your legal query and then click 'Stop' when finished.")
+        
+        # When the user stops the recording
+        if not webrtc_ctx.state.playing and recording_started and not recording_stopped:
+            st.success("Recording stopped. Processing audio...")
+            recording_stopped = True
             
-            with st.spinner("Transcribing audio..."):
-                # Process and transcribe the audio
-                audio_path = self.preprocess_audio(audio_bytes)
-                if audio_path:
-                    transcription = self.transcribe_audio(audio_path)
-                    # Clean up temp file
-                    os.unlink(audio_path)
+            # Save all audio frames to a temporary file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_filename = f.name
+                
+                # Convert the frames to a WAV file
+                try:
+                    # Get all frames from the queue
+                    frames = []
+                    while not audio_frames.empty():
+                        frames.append(audio_frames.get())
                     
-                    if transcription:
-                        st.success("✅ Transcription complete!")
-                        return transcription
+                    if frames:
+                        # Create a new audio container
+                        container = av.open(temp_filename, mode='w')
+                        stream = container.add_stream('pcm_s16le', rate=48000, channels=1)
+                        
+                        # Write the frames to the container
+                        for frame in frames:
+                            for packet in stream.encode(frame):
+                                container.mux(packet)
+                        
+                        # Close the container
+                        container.close()
+                        
+                        # Transcribe the recorded audio
+                        transcription = self.transcribe_audio(temp_filename)
+                        transcription_result[0] = transcription
+                        
+                        # Display the audio for playback
+                        with open(temp_filename, "rb") as audio_file:
+                            audio_bytes = audio_file.read()
+                            st.audio(audio_bytes, format="audio/wav")
+                except Exception as e:
+                    st.error(f"Error processing audio: {str(e)}")
+                    logging.error(f"Error processing audio: {str(e)}")
+                finally:
+                    # Clean up the temporary file
+                    try:
+                        os.unlink(temp_filename)
+                    except:
+                        pass
         
-        return None
+        return transcription_result[0]
     
     def detect_language(self, audio_file_path):
         """Detect the language of audio using Whisper."""
@@ -91,18 +161,14 @@ class AudioProcessor:
     
     def get_voice_query(self):
         """Interface for getting a voice query from the user."""
-        transcription = None
+        st.subheader("Voice Query")
+        st.write("Use the microphone below to record your legal question")
         
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            st.write("Click the button to record your legal question")
-        
-        with col2:
-            if st.button("🎤 Record"):
-                transcription = self.record_and_transcribe()
+        # Record audio and get transcription directly
+        transcription = self.record_and_transcribe()
         
         if transcription:
-            st.info(f"**Transcription**: {transcription}")
+            st.success("Transcription successful!")
+            st.write(f"**Your question**: {transcription}")
         
         return transcription
