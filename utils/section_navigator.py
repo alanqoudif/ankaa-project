@@ -1,11 +1,14 @@
 """
 Section Navigator for ShariaAI Omani Legal Assistant.
-This module enables hierarchical browsing and navigation of legal documents.
+This module enables hierarchical browsing and navigation of legal documents with Arabic support.
+Integrated with AI-powered translation for better bilingual support.
 """
 import re
 import fitz  # PyMuPDF
 import streamlit as st
+import logging
 from typing import Dict, List, Tuple, Optional
+from utils.translation_service import get_translation_service
 
 class LegalSection:
     """Represents a section of a legal document with hierarchical structure."""
@@ -33,7 +36,7 @@ class LegalSection:
         return f"{self.title} (Level {self.level}, {len(self.children)} children)"
 
 class SectionNavigator:
-    """Navigator for hierarchical browsing of legal documents."""
+    """Navigator for hierarchical browsing of legal documents with Arabic support."""
     
     def __init__(self):
         self.documents = {}  # Map of doc_name to root section
@@ -42,7 +45,7 @@ class SectionNavigator:
     
     def load_document(self, file_path: str) -> bool:
         """
-        Load a document and extract its hierarchical structure.
+        Load a document and extract its hierarchical structure with Arabic support.
         Returns True if successful, False otherwise.
         """
         try:
@@ -54,53 +57,94 @@ class SectionNavigator:
             root.source_doc = doc_name
             
             # Extract text and identify sections
-            section_pattern = re.compile(r'^(Article|Section|Chapter)\s+(\d+[a-zA-Z]*)[:.\s]*(.*?)$', re.MULTILINE)
-            subsection_pattern = re.compile(r'^(\d+)[\.\s]+(.*?)$', re.MULTILINE)
+            # Updated patterns to support both English and Arabic legal document structures
+            section_patterns = [
+                # Traditional English patterns
+                re.compile(r'^(Article|Section|Chapter)\s+(\d+[a-zA-Z]*)[:.\s]*(.*?)$', re.MULTILINE | re.IGNORECASE),
+                
+                # Arabic patterns for sections (المادة = Article, الفصل = Chapter, etc.)
+                re.compile(r'^(المادة|الفصل|القسم|مادة|فصل)\s*(\d+[٠-٩]*)[:.\s-]*(.*?)$', re.MULTILINE),
+                
+                # Simple numbered article pattern (common in Arabic legal docs)
+                re.compile(r'^(\(\s*\d+\s*\)|\d+\s*[\.-])\s*(.*?)$', re.MULTILINE)
+            ]
+            
+            # Subsection patterns
+            subsection_patterns = [
+                # Traditional numbered subsections (1., 2., etc.)
+                re.compile(r'^(\d+[a-zA-Z٠-٩]*)[\.\s-]+(.*?)$', re.MULTILINE),
+                
+                # Arabic numbered subsections
+                re.compile(r'^(\(\s*[أ-ي١٢٣٤٥٦٧٨٩٠]\s*\))\s*(.*?)$', re.MULTILINE),
+                
+                # Lettered subsections ((أ), (ب), etc.)
+                re.compile(r'^(\(\s*[أ-ي]\s*\))\s*(.*?)$', re.MULTILINE)
+            ]
             
             current_section = None
             current_subsection = None
+            sections_found = False
             
             for page_num, page in enumerate(doc):
                 text = page.get_text()
                 
-                # Find all section matches
-                section_matches = section_pattern.finditer(text)
-                for match in section_matches:
-                    section_type = match.group(1)
-                    section_num = match.group(2)
-                    section_title = match.group(3).strip()
-                    
-                    # Create new section
-                    title = f"{section_type} {section_num}: {section_title}"
-                    new_section = LegalSection(title, "", 1, root)
-                    new_section.source_doc = doc_name
-                    new_section.page_num = page_num
-                    
-                    # Add to root
-                    root.add_child(new_section)
-                    
-                    # Update current section
-                    current_section = new_section
-                    current_subsection = None
+                # First pass: Try to find major sections
+                for pattern in section_patterns:
+                    section_matches = pattern.finditer(text)
+                    for match in section_matches:
+                        sections_found = True
+                        if len(match.groups()) >= 2:
+                            # For patterns with type, number, and title
+                            if len(match.groups()) >= 3:
+                                section_type = match.group(1)
+                                section_num = match.group(2)
+                                section_title = match.group(3).strip() if match.group(3) else ""
+                                
+                                # Create title based on matched groups
+                                if section_title:
+                                    title = f"{section_type} {section_num}: {section_title}"
+                                else:
+                                    title = f"{section_type} {section_num}"
+                            else:
+                                # For simpler patterns with just a marker and content
+                                section_marker = match.group(1)
+                                section_content = match.group(2).strip() if len(match.groups()) > 1 else ""
+                                title = f"{section_marker} {section_content[:50]}..."
+                            
+                            # Create new section
+                            new_section = LegalSection(title, "", 1, root)
+                            new_section.source_doc = doc_name
+                            new_section.page_num = page_num
+                            
+                            # Add to root
+                            root.add_child(new_section)
+                            
+                            # Update current section
+                            current_section = new_section
+                            current_subsection = None
                 
                 # Find all subsection matches if we have a current section
                 if current_section:
-                    subsection_matches = subsection_pattern.finditer(text)
-                    for match in subsection_matches:
-                        subsection_num = match.group(1)
-                        subsection_content = match.group(2).strip()
-                        
-                        # Create new subsection
-                        title = f"{subsection_num}. {subsection_content[:50]}..."
-                        new_subsection = LegalSection(title, subsection_content, 2, current_section)
-                        new_subsection.source_doc = doc_name
-                        new_subsection.page_num = page_num
-                        
-                        # Add to current section
-                        current_section.add_child(new_subsection)
-                        
-                        # Update current subsection
-                        current_subsection = new_subsection
+                    for pattern in subsection_patterns:
+                        subsection_matches = pattern.finditer(text)
+                        for match in subsection_matches:
+                            if len(match.groups()) >= 2:
+                                subsection_num = match.group(1)
+                                subsection_content = match.group(2).strip()
+                                
+                                # Create new subsection - limit title length for display
+                                max_title_length = 50
+                                truncated_content = subsection_content[:max_title_length] + ("..." if len(subsection_content) > max_title_length else "")
+                                title = f"{subsection_num} {truncated_content}"
+                                new_subsection = LegalSection(title, subsection_content, 2, current_section)
+                                new_subsection.source_doc = doc_name
+                                new_subsection.page_num = page_num
+                                
+                                # Add to current section
+                                current_section.add_child(new_subsection)
+                                
+                                # Update current subsection
+                                current_subsection = new_subsection
                 
                 # If we couldn't find any sections or subsections, add the page content
                 # to the current section or subsection
@@ -112,16 +156,70 @@ class SectionNavigator:
                     # If no sections found, add the content to the root
                     root.content += f"\n{text}"
             
+            # If no sections were found, try a more aggressive approach to find structure
+            if not sections_found:
+                st.warning(f"No standard sections found in document: {doc_name}. Trying alternate section detection...")
+                
+                # Reprocess with more general patterns
+                fallback_patterns = [
+                    # Match any line that starts with a number followed by a period
+                    re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),
+                    
+                    # Match any capitalized line or line with bold formatting (possible section heading)
+                    re.compile(r'^([A-Z][A-Z\s]+|[أ-ي][أ-ي\s]+)[:\.\s-]*(.*?)$', re.MULTILINE)
+                ]
+                
+                # Process each page with fallback patterns
+                for page_num, page in enumerate(doc):
+                    text = page.get_text()
+                    page_sections_found = False
+                    
+                    for pattern in fallback_patterns:
+                        matches = pattern.finditer(text)
+                        for match in matches:
+                            page_sections_found = True
+                            if len(match.groups()) >= 1:
+                                marker = match.group(1)
+                                title_text = match.group(2).strip() if len(match.groups()) > 1 else ""
+                                
+                                # Create a section with whatever we found
+                                title = f"{marker}: {title_text[:50]}..." if title_text else f"{marker}"
+                                new_section = LegalSection(title, "", 1, root)
+                                new_section.source_doc = doc_name
+                                new_section.page_num = page_num
+                                
+                                # Add to root
+                                root.add_child(new_section)
+                    
+                    # If still no sections, create a page-based section
+                    if not page_sections_found and not sections_found:
+                        # Create a section for this page
+                        page_title = f"Page {page_num+1}"
+                        page_section = LegalSection(page_title, text, 1, root)
+                        page_section.source_doc = doc_name
+                        page_section.page_num = page_num
+                        
+                        # Add to root
+                        root.add_child(page_section)
+                        sections_found = True
+            
             # Store the document
             self.documents[doc_name] = root
             
             # Clean up
             doc.close()
             
-            return True
+            # Report success or partial success
+            if sections_found:
+                st.success(f"Loaded document: {doc_name} with {len(root.children)} sections")
+                return True
+            else:
+                st.warning(f"Document loaded but no sections identified: {doc_name}")
+                return True  # Still return True as we did create a basic structure
         
         except Exception as e:
             st.error(f"Error loading document for section navigation: {str(e)}")
+            logging.error(f"Section navigator error: {str(e)}", exc_info=True)
             return False
     
     def load_documents(self, file_paths: List[str]) -> int:
@@ -183,120 +281,149 @@ class SectionNavigator:
         self.current_section = section
         return section
     
-    def get_section_summary(self, section: LegalSection, detail_level: int = 1) -> str:
-        """
-        Generate a summary of the section with adjustable detail level.
-        
-        detail_level:
-            1 = Brief summary (title + first paragraph)
-            2 = Medium summary (title + first few paragraphs)
-            3 = Full content
-        """
-        if not section:
-            return "No section selected."
-        
-        if detail_level == 1:
-            # Brief summary
-            paragraphs = section.content.split("\n\n")
-            if paragraphs:
-                return f"{section.title}\n\n{paragraphs[0]}"
-            return section.title
-        
-        elif detail_level == 2:
-            # Medium summary
-            paragraphs = section.content.split("\n\n")
-            if len(paragraphs) > 3:
-                content = "\n\n".join(paragraphs[:3])
-                return f"{section.title}\n\n{content}\n\n..."
-            return f"{section.title}\n\n{section.content}"
-        
-        else:
-            # Full content
-            return f"{section.title}\n\n{section.content}"
-    
-    def find_cross_references(self, section: LegalSection) -> List[Tuple[str, LegalSection]]:
-        """
-        Find cross-references in a section to other sections.
-        Returns a list of (reference text, referenced section) tuples.
-        """
-        if not section or not section.content:
-            return []
-        
-        references = []
-        
-        # Pattern to match references like "Article X", "Section Y", etc.
-        ref_pattern = re.compile(r'(Article|Section|Chapter)\s+(\d+[a-zA-Z]*)', re.IGNORECASE)
-        
-        # Find all references in the content
-        matches = ref_pattern.finditer(section.content)
-        for match in matches:
-            ref_type = match.group(1)
-            ref_num = match.group(2)
-            ref_text = f"{ref_type} {ref_num}"
-            
-            # Search for the referenced section
-            for doc_name, root in self.documents.items():
-                for child in root.children:
-                    if child.title.startswith(ref_text):
-                        references.append((ref_text, child))
-                        break
-        
-        return references
-    
     def render_section_navigator(self):
-        """Render the section navigator UI in Streamlit."""
-        st.subheader("Section Navigator")
+        """Render the section navigator interface in Streamlit with AI-powered translation."""
+        # Select document
+        st.subheader(get_translation_service().translate_to_arabic("Document Selection"))
         
-        # Document selector
-        doc_names = self.get_documents()
-        if not doc_names:
-            st.warning("No documents loaded for navigation. Please load documents first.")
+        # Get document list and ensure it's not empty
+        documents = self.get_documents()
+        if not documents:
+            st.warning(get_translation_service().translate_to_arabic("No documents loaded. Please ensure documents are loaded first."))
             return
         
-        selected_doc = st.selectbox("Select Document", doc_names)
+        # Document selector
+        selected_doc = st.selectbox(get_translation_service().translate_to_arabic("Select a document"), documents)
+        
+        # Language selector for interface
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            display_language = st.radio(
+                get_translation_service().translate_to_arabic("Display Language"),
+                ["Arabic", "English", "Bilingual"],
+                index=0  # Default to Arabic
+            )
         
         if selected_doc:
-            root = self.select_document(selected_doc)
-            if not root:
-                st.error(f"Error loading document: {selected_doc}")
-                return
-            
-            # Section selector
+            # Get sections
             sections = self.get_sections(selected_doc)
-            if not sections:
-                st.warning(f"No sections found in {selected_doc}")
-                return
             
-            section_titles = [section.title for section in sections]
-            selected_section_title = st.selectbox("Select Section", section_titles)
-            
-            if selected_section_title:
-                # Find the selected section
-                selected_section = next((s for s in sections if s.title == selected_section_title), None)
+            if sections:
+                # Format section titles for display
+                section_titles = [section.title for section in sections]
                 
-                if selected_section:
-                    # Detail level slider
-                    detail_level = st.slider("Detail Level", min_value=1, max_value=3, value=2, 
-                                             help="1 = Brief, 2 = Medium, 3 = Full")
+                # Section selector
+                nav_title = get_translation_service().translate_to_arabic("Section Navigation")
+                st.subheader(nav_title)
+                
+                select_section_text = get_translation_service().translate_to_arabic("Select a section")
+                selected_section_title = st.selectbox(select_section_text, section_titles)
+                
+                if selected_section_title:
+                    # Find the selected section
+                    selected_section = next((s for s in sections if s.title == selected_section_title), None)
                     
-                    # Display the section summary
-                    summary = self.get_section_summary(selected_section, detail_level)
-                    st.markdown(f"### {selected_section.title}")
-                    st.markdown(summary)
+                    if selected_section:
+                        # Display section content
+                        content_header = get_translation_service().translate_to_arabic("Section Content")
+                        st.subheader(content_header)
+                        
+                        # Add metadata
+                        doc_info = get_translation_service().translate_to_arabic(f"Document: {selected_doc} | Page: {selected_section.page_num + 1}")
+                        st.info(doc_info)
+                        
+                        # Show section title
+                        st.markdown(f"### {selected_section.title}")
+                        
+                        # Clean and display the content with translation if needed
+                        content = selected_section.content.strip()
+                        if content:
+                            if display_language == "Arabic":
+                                # Translate content to Arabic if it contains mostly English
+                                translated_content = get_translation_service().translate(content, "Arabic")
+                                st.markdown(translated_content)
+                            elif display_language == "English":
+                                # Translate content to English if it contains mostly Arabic
+                                translated_content = get_translation_service().translate(content, "English")
+                                st.markdown(translated_content)
+                            else:  # Bilingual
+                                # Show both original and translated versions
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown("#### " + get_translation_service().translate_to_arabic("Original"))
+                                    st.markdown(content)
+                                with col2:
+                                    # Detect language and translate to the other
+                                    arabic_chars = sum(1 for c in content if '\u0600' <= c <= '\u06FF')
+                                    if arabic_chars > len(content) / 2:
+                                        # Content is mostly Arabic, translate to English
+                                        st.markdown("#### " + get_translation_service().translate_to_arabic("English Translation"))
+                                        translated = get_translation_service().translate(content, "English", "Arabic")
+                                    else:
+                                        # Content is mostly English, translate to Arabic
+                                        st.markdown("#### " + get_translation_service().translate_to_arabic("Arabic Translation"))
+                                        translated = get_translation_service().translate(content, "Arabic", "English")
+                                    st.markdown(translated)
+                        else:
+                            no_content_msg = get_translation_service().translate_to_arabic("No content available for this section.")
+                            st.write(no_content_msg)
+                        
+                        # If the section has subsections, show them
+                        if selected_section.children:
+                            subsections_title = get_translation_service().translate_to_arabic("Subsections")
+                            st.subheader(subsections_title)
+                            
+                            for subsection in selected_section.children:
+                                with st.expander(subsection.title):
+                                    subsection_content = subsection.content
+                                    if display_language == "Arabic":
+                                        # Translate subsection content to Arabic
+                                        translated_subsection = get_translation_service().translate(subsection_content, "Arabic")
+                                        st.markdown(translated_subsection)
+                                    elif display_language == "English":
+                                        # Translate subsection content to English
+                                        translated_subsection = get_translation_service().translate(subsection_content, "English")
+                                        st.markdown(translated_subsection)
+                                    else:  # Bilingual
+                                        # Show both original and translated
+                                        st.markdown("**" + get_translation_service().translate_to_arabic("Original") + "**")
+                                        st.markdown(subsection_content)
+                                        st.markdown("---")
+                                        
+                                        # Detect language and translate to the other
+                                        arabic_chars = sum(1 for c in subsection_content if '\u0600' <= c <= '\u06FF')
+                                        if arabic_chars > len(subsection_content) / 2:
+                                            # Content is mostly Arabic, translate to English
+                                            st.markdown("**" + get_translation_service().translate_to_arabic("English Translation") + "**")
+                                            translated = get_translation_service().translate(subsection_content, "English", "Arabic")
+                                        else:
+                                            # Content is mostly English, translate to Arabic
+                                            st.markdown("**" + get_translation_service().translate_to_arabic("Arabic Translation") + "**")
+                                            translated = get_translation_service().translate(subsection_content, "Arabic", "English")
+                                        st.markdown(translated)
+            else:
+                warning_msg = get_translation_service().translate_to_arabic(f"No sections found in document: {selected_doc}")
+                st.warning(warning_msg)
+                
+                # Offer troubleshooting option
+                troubleshoot_btn = get_translation_service().translate_to_arabic("Try alternate section detection")
+                if st.button(troubleshoot_btn):
+                    # Remove the current document from the map
+                    if selected_doc in self.documents:
+                        del self.documents[selected_doc]
                     
-                    # Display subsections if any
-                    if selected_section.children:
-                        st.markdown("### Subsections")
-                        for subsection in selected_section.children:
-                            with st.expander(subsection.title):
-                                st.markdown(self.get_section_summary(subsection, detail_level))
+                    # Get the file path from original loading
+                    doc_path = None
+                    # This logic depends on how you originally loaded the documents
+                    # You may need to keep track of original file paths
                     
-                    # Display cross-references if any
-                    cross_refs = self.find_cross_references(selected_section)
-                    if cross_refs:
-                        st.markdown("### Cross References")
-                        for ref_text, ref_section in cross_refs:
-                            st.markdown(f"- [{ref_text}]({ref_section.get_full_path()}): {ref_section.title}")
-                    
-                    # Source information
-                    st.markdown(f"**Source**: {selected_section.source_doc}, Page {selected_section.page_num + 1}")
+                    if doc_path:
+                        # Try loading with more aggressive patterns
+                        success = self.load_document(doc_path)
+                        if success:
+                            success_msg = get_translation_service().translate_to_arabic("Document reloaded with alternate detection")
+                            st.success(success_msg)
+                            st.rerun()
+                    else:
+                        error_msg = get_translation_service().translate_to_arabic("Unable to find original document path for reloading")
+                        st.error(error_msg)
