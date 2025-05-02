@@ -94,16 +94,13 @@ class DocumentDrafter:
         {params.get('questions', 'What specific legal questions need to be addressed?')}
         
         LEGAL ANALYSIS:
-        [Provide a comprehensive legal analysis that addresses each question presented. Reference specific provisions of Omani law. Explain your reasoning clearly.]
+        [Provide a detailed legal analysis that addresses each legal question presented. Cite relevant provisions of Omani law, regulations, and precedents. Analyze how the law applies to the specific facts of this case.]
         
-        OPINION:
-        [State your legal opinion on each question, derived from your analysis. Be clear and unambiguous.]
+        CONCLUSION AND RECOMMENDATIONS:
+        [Provide a clear conclusion for each legal question and specific recommendations for the client's course of action.]
         
-        QUALIFICATIONS AND LIMITATIONS:
-        [State any qualifications or limitations to your opinion, e.g., assumptions made, documents reviewed, scope limitations.]
-        
-        CONCLUSION:
-        [Summarize your opinion and offer closing remarks.]
+        LIMITATIONS:
+        [State any limitations or qualifications to this opinion, such as reliance on facts provided or changes in the law that may affect this opinion.]
         
         Sincerely,
         
@@ -117,7 +114,7 @@ class DocumentDrafter:
         return self._generate_content(prompt)
     
     def _demand_letter_template(self, params):
-        """Template for generating a demand letter."""
+        """Template for generating a legal demand letter."""
         prompt = f"""
         Write a formal demand letter based on the following parameters:
         
@@ -168,7 +165,7 @@ class DocumentDrafter:
         TITLE: {params.get('title', 'AGREEMENT')}
         
         PARTIES:
-        {params.get('parties', '1. [First Party Name and Details]\n2. [Second Party Name and Details]')}
+        {params.get('parties', '1. [First Party Name and Details] 2. [Second Party Name and Details]')}
         
         DATE: {params.get('date', datetime.now().strftime('%B %d, %Y'))}
         
@@ -284,14 +281,21 @@ class DocumentDrafter:
             # Add metadata section
             metadata = ""
             if doc_type == "legal_memo":
-                metadata += f"TO: {parameters.get('recipient', '[Recipient]')}\n"
-                metadata += f"FROM: {parameters.get('sender', '[Sender]')}\n"
-                metadata += f"DATE: {parameters.get('date', datetime.now().strftime('%B %d, %Y'))}\n"
-                metadata += f"SUBJECT: {parameters.get('subject', 'Legal Analysis')}\n"
+                metadata += f"TO: {parameters.get('recipient', '[Recipient]')}"
+                metadata += "\n"
+                metadata += f"FROM: {parameters.get('sender', '[Sender]')}"
+                metadata += "\n"
+                metadata += f"DATE: {parameters.get('date', datetime.now().strftime('%B %d, %Y'))}"
+                metadata += "\n"
+                metadata += f"SUBJECT: {parameters.get('subject', 'Legal Analysis')}"
+                metadata += "\n"
             elif doc_type in ["legal_opinion", "demand_letter"]:
-                metadata += f"DATE: {parameters.get('date', datetime.now().strftime('%B %d, %Y'))}\n"
-                metadata += f"ADDRESSEE: {parameters.get('addressee', '[Recipient]')}\n"
-                metadata += f"RE: {parameters.get('subject', 'Legal Matter')}\n"
+                metadata += f"DATE: {parameters.get('date', datetime.now().strftime('%B %d, %Y'))}"
+                metadata += "\n"
+                metadata += f"ADDRESSEE: {parameters.get('addressee', '[Recipient]')}"
+                metadata += "\n"
+                metadata += f"RE: {parameters.get('subject', 'Legal Matter')}"
+                metadata += "\n"
             
             if metadata:
                 sections.append({
