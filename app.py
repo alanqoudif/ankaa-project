@@ -397,10 +397,20 @@ with tabs[3]:
     st.header("Voice Query")
     st.write("Ask questions about Omani law using your voice")
     
+    # Create necessary session states for the voice query feature
+    if "voice_query_processed" not in st.session_state:
+        st.session_state.voice_query_processed = False
+    if "voice_query_result" not in st.session_state:
+        st.session_state.voice_query_result = None
+    
     # Voice query interface
     voice_query = st.session_state.audio_processor.get_voice_query()
     
-    if voice_query:
+    # Process query if we have a new one
+    if voice_query and (not st.session_state.voice_query_processed or 
+                        st.session_state.last_query != voice_query):
+        st.session_state.last_query = voice_query
+        
         # Add voice query to chat history
         st.session_state.messages.append({"role": "user", "content": voice_query})
         
@@ -425,9 +435,9 @@ with tabs[3]:
                     else:
                         response = str(result)
                     
-                    # Display the response
-                    st.markdown("### Answer:")
-                    st.markdown(response)
+                    # Store the response in session state
+                    st.session_state.voice_query_result = response
+                    st.session_state.voice_query_processed = True
                     
                     # Add to chat history
                     st.session_state.messages.append({"role": "assistant", "content": response})
@@ -435,8 +445,18 @@ with tabs[3]:
                 except Exception as e:
                     error_msg = f"Error generating response: {str(e)}"
                     st.error(error_msg)
+                    st.session_state.voice_query_result = error_msg
+                    st.session_state.voice_query_processed = True
             else:
-                st.warning("Please load documents first to enable question answering.")
+                warning_msg = "Please load documents first to enable question answering."
+                st.warning(warning_msg)
+                st.session_state.voice_query_result = warning_msg
+                st.session_state.voice_query_processed = True
+    
+    # Display the stored response if available
+    if st.session_state.voice_query_processed and st.session_state.voice_query_result:
+        st.markdown("### Answer:")
+        st.markdown(st.session_state.voice_query_result)
 
 # Tab 5: Provision Comparison (Level 3 Feature)
 with tabs[4]:

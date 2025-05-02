@@ -190,17 +190,36 @@ class AudioProcessor:
     
     def get_voice_query(self):
         """Interface for getting a voice query from the user."""
-        st.subheader("Voice Query")
         st.write("Use the microphone below to record your legal question")
+        
+        # Create a session state for transcription if it doesn't exist
+        if "transcription" not in st.session_state:
+            st.session_state.transcription = None
+            
+        if "submit_ready" not in st.session_state:
+            st.session_state.submit_ready = False
+            
+        # Function to update session state when transcription is ready
+        def on_transcription_ready(text):
+            if text and text.strip():
+                st.session_state.transcription = text
+                st.session_state.submit_ready = True
         
         # Record audio and get transcription
         transcription = self.record_and_transcribe()
         
+        # If we got a new transcription, update session state
         if transcription and transcription.strip():
-            st.write(f"**Your question**: {transcription}")
+            on_transcription_ready(transcription)
+        
+        # Display current transcription from session state
+        if st.session_state.transcription:
+            st.success("Transcription successful!")
+            st.write(f"**Your question**: {st.session_state.transcription}")
             
-            # Add a button to confirm using this transcription for query
-            if st.button("Submit this question"):
-                return transcription
+            # Process button - automatically processes the query
+            if st.button("Process this question") or st.session_state.submit_ready:
+                st.session_state.submit_ready = False  # Reset flag after use
+                return st.session_state.transcription
         
         return None
