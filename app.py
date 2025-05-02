@@ -366,14 +366,13 @@ with tabs[0]:
                         st.warning(no_kb_msg)
                         st.session_state.messages.append({"role": "assistant", "content": no_kb_msg})
     
-    with chat_col2:
-        # Information panel
-        st.info("""
-        **How to Use:**
-        1. Type your question about Omani law
-        2. Get answers with citations to relevant laws
-        3. Follow up with more questions
-        """)
+    # Information panel (moved from sidebar column)
+    st.sidebar.info("""
+    **How to Use:**
+    1. Type your question about Omani law
+    2. Get answers with citations to relevant laws
+    3. Follow up with more questions
+    """)
 
 # Tab 2: Section Navigator (Level 2 Feature)
 with tabs[1]:

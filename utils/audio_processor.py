@@ -248,7 +248,7 @@ class AudioProcessor:
                     if st.button("🎤 Voice Input", key="start_chat_recording"):
                         st.session_state.chat_recording = True
                         st.session_state.chat_audio_frames = queue.Queue()  # Reset queue
-                        st.experimental_rerun()
+                        st.rerun()
                 else:
                     if st.button("⏹️ Stop Recording", key="stop_chat_recording"):
                         st.session_state.chat_recording = False
@@ -257,7 +257,7 @@ class AudioProcessor:
                             transcription = self._process_chat_audio()
                             if transcription and transcription.strip():
                                 st.session_state.chat_transcription = transcription
-                        st.experimental_rerun()
+                        st.rerun()
             
             with col2:
                 # Show recording status
