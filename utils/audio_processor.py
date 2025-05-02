@@ -8,7 +8,8 @@ from pydub import AudioSegment
 from utils.env_loader import load_env_vars
 
 # Load environment variables
-_, _, OPENROUTER_API_KEY, _ = load_env_vars()
+env_vars = load_env_vars()
+OPENROUTER_API_KEY = env_vars['openrouter_api_key']
 
 class AudioProcessor:
     """Handles audio recording, processing, and transcription for voice queries."""
