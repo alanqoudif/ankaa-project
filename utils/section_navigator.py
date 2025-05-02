@@ -160,7 +160,14 @@ class SectionNavigator:
             if not sections_found:
                 logging.info(f"Using alternate section detection for document: {doc_name}")
                 
-                with st.spinner(get_translation_service().translate_to_arabic(f"تحليل محتوى المستند: {doc_name}...")):
+                # Safely get spinner text with fallback if translation fails
+                try:
+                    spinner_text = get_translation_service().translate_to_arabic(f"تحليل محتوى المستند: {doc_name}...")
+                except Exception as e:
+                    logging.error(f"Translation error in section navigator: {e}")
+                    spinner_text = f"تحليل محتوى المستند: {doc_name}..."
+                    
+                with st.spinner(spinner_text):
                     fallback_patterns = [
                         # Match any line that starts with a number followed by a period
                         re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),

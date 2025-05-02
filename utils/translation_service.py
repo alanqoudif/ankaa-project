@@ -131,9 +131,40 @@ _translation_service_instance = None
 def get_translation_service():
     """Get the translation service singleton instance with lazy loading."""
     global _translation_service_instance
-    if _translation_service_instance is None:
-        _translation_service_instance = TranslationService()
-    return _translation_service_instance
+    try:
+        if _translation_service_instance is None:
+            logging.info("Initializing translation service for the first time")
+            _translation_service_instance = TranslationService()
+        return _translation_service_instance
+    except Exception as e:
+        logging.error(f"Error getting translation service: {e}", exc_info=True)
+        # Return a dummy service with minimal functionality in case of failure
+        return _DummyTranslationService()
+
+class _DummyTranslationService:
+    """A fallback translation service that simply returns the original text.
+    Used when the main translation service fails to initialize or encounters errors."""
+    
+    def __init__(self):
+        logging.warning("Using dummy translation service as fallback")
+    
+    def translate(self, text, target_language=None, source_language=None):
+        """Return the original text without translation."""
+        return text
+    
+    def translate_to_arabic(self, text):
+        """Return the original text (if it's already Arabic) or a simple Arabic placeholder."""
+        # Check if text appears to be in English (basic check)
+        if any(ord(c) < 128 for c in text):
+            return "النص المترجم غير متوفر" + " " + text
+        return text
+    
+    def translate_to_english(self, text):
+        """Return the original text (if it's already English) or a simple English placeholder."""
+        # Check if text contains Arabic characters
+        if any(ord(c) > 1536 and ord(c) < 1791 for c in text):
+            return "Translation unavailable: " + text
+        return text
 
 # Provide a reference to the singleton getter
 translation_service = get_translation_service
