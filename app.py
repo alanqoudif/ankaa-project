@@ -1,13 +1,11 @@
 import streamlit as st
 import os
 import tempfile
-import logging
 import fitz  # PyMuPDF
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema.document import Document
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.embeddings import FakeEmbeddings  # Fallback embeddings
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
@@ -199,201 +197,65 @@ def create_qa_chain(vector_db):
         st.error(f"Error creating QA chain: {str(e)}")
         return None
 
+# Function to load legal documents from data directory
 def load_legal_documents():
-    # If data is already loaded, return
     if st.session_state.data_loaded:
         return
-        
-    # Set up a comprehensive error handling wrapper
-    def run_with_safe_fallback(func, fallback_return=None, log_error=True):
-        """Safely run a function with comprehensive error handling."""
-        try:
-            return func()
-        except Exception as e:
-            if log_error:
-                logging.error(f"Error in document loading: {e}", exc_info=True)
-            return fallback_return
     
-    # Create a clean loading UI with progress tracking
-    with st.spinner("جاري تحميل المستندات القانونية... برجاء الانتظار"):  # "Loading legal documents... please wait"
-        # Create a progress bar
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # First, load all PDF files in the legal documents directory
-        pdf_files = [os.path.join(LEGAL_FILES_DIR, f) for f in os.listdir(LEGAL_FILES_DIR) if f.endswith('.pdf')]
-        
-        # Prioritize files that might be related to criminal law
-        pdf_files = sorted(pdf_files, key=lambda x: 1 if "جزاء" in x.lower() else 2)
-        max_files = min(30, len(pdf_files))  # Process up to 30 files
-        
-        # Debug log instead of showing user
-        logging.info(f"Found {len(pdf_files)} PDF files, processing up to {max_files}")
-        
-        # Create a status placeholder
-        status_text.text(f"تحميل المستندات القانونية (0/{max_files})")
-        
+    with st.spinner("Loading Omani legal documents..."):
         try:
-            # Create document objects for each PDF
+            # Get all PDF files in the legal directory
+            pdf_files = [os.path.join(LEGAL_FILES_DIR, f) for f in os.listdir(LEGAL_FILES_DIR) if f.endswith('.pdf')]
+            
+            if not pdf_files:
+                st.error(f"No PDF files found in {LEGAL_FILES_DIR}")
+                return
+            
+            # Process all files in the legal directory
+            # First, prioritize loading any criminal/penal code documents
+            criminal_law_keywords = ['جزاء', 'جنائي', 'عقوبات', 'penal', 'criminal']
+            
+            # Sort files to prioritize criminal law documents
+            priority_files = []
+            regular_files = []
+            
+            for pdf_file in pdf_files:
+                file_name = os.path.basename(pdf_file).lower()
+                if any(keyword in file_name for keyword in criminal_law_keywords):
+                    priority_files.append(pdf_file)
+                else:
+                    regular_files.append(pdf_file)
+            
+            # Combine lists with priority files first
+            sorted_pdf_files = priority_files + regular_files
+            
+            # Process files, loading at least 20 documents or all priority files
+            max_docs = 30  # Increased from 5 to 30 for better coverage
             all_documents = []
-            successful_files = []
             
-            for i, pdf_file in enumerate(pdf_files[:max_files]):
-                try:
-                    # Update progress
-                    progress = (i + 1) / max_files
-                    progress_bar.progress(progress)
-                    status_text.text(f"تحميل: {os.path.basename(pdf_file)} ({i+1}/{max_files})")
+            for pdf_file in sorted_pdf_files[:max_docs]:  # Load more documents
+                documents = process_law_pdf(pdf_file)
+                if documents:
+                    all_documents.extend(documents)
+                    st.session_state.documents.append(os.path.basename(pdf_file))
                     
-                    doc = fitz.open(pdf_file)
-                    file_docs = []
-                    
-                    for page_num, page in enumerate(doc):
-                        text = page.get_text()
-                        # Skip pages with very little text
-                        if len(text.strip()) < 50:
-                            continue
-                        # Create LangChain document
-                        metadata = {
-                            "source": pdf_file,
-                            "page": page_num
-                        }
-                        doc_obj = Document(page_content=text, metadata=metadata)
-                        file_docs.append(doc_obj)
-                    
-                    # Only count as successful if we extracted content
-                    if file_docs:
-                        all_documents.extend(file_docs)
-                        successful_files.append(os.path.basename(pdf_file))
-                        # Log success to console instead of showing user
-                        logging.info(f"✓ Successfully processed {os.path.basename(pdf_file)} - {len(file_docs)} pages")
-                    else:
-                        # Log failure to console instead of showing user
-                        logging.warning(f"⚠ No text content found in {os.path.basename(pdf_file)}")
-                    
-                    doc.close()
-                    
-                except Exception as e:
-                    # Log error to console instead of showing user
-                    logging.error(f"❌ Error processing {os.path.basename(pdf_file)}: {str(e)}")
-                    continue
+                    # Load document into section navigator as well
+                    st.session_state.section_navigator.load_document(pdf_file)
             
-            # Check if we have any documents to process
             if all_documents:
-                # Update status
-                status_text.text("إنشاء قاعدة البيانات الذكية...")
-                
-                # Split documents into chunks
-                text_splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=1000,
-                    chunk_overlap=200
-                )
-                
-                # Split the documents into chunks
-                splits = text_splitter.split_documents(all_documents)
-                status_text.text(f"معالجة {len(splits)} مقطع نصي...")
-                
-                # Create embeddings - use OpenAI embeddings instead of HuggingFace to avoid dependency issues
-                status_text.text("إنشاء نماذج التضمين النصي...")
-                # Create simple embeddings first to avoid API errors
-                logging.info("Using simple embeddings to avoid API errors")
-                embeddings = FakeEmbeddings(size=1536)  # Standard OpenAI embedding size
-                
-                # Skip trying to use OpenAI embeddings since we're getting 404 errors
-                # This is a temporary measure until the API issues are resolved
-                logging.warning("Skipping OpenAI embeddings due to API issues, using FakeEmbeddings instead")
-                
-                # Create vector store
-                status_text.text("إنشاء قاعدة بيانات متجهات النصوص...")
-                vector_db = Chroma.from_documents(
-                    documents=splits,
-                    embedding=embeddings,
-                    persist_directory=os.path.join(tempfile.gettempdir(), "chroma_db")
-                )
-                
-                # Persist vector store
-                vector_db.persist()
+                # Initialize vector database
+                st.session_state.vector_db = setup_vector_db(all_documents)
                 
                 # Create QA chain
-                status_text.text("تهيئة نموذج الذكاء الاصطناعي...")
-                retriever = vector_db.as_retriever(search_kwargs={"k": 5})
-                
-                # Create a template for our prompt
-                template = """You are an assistant specializing in Omani law. Use the following context to answer the question. If you don't know the answer based on the context, say you don't know and avoid making up an answer.  Try to be detailed and thorough in your response. Always try to cite specific laws, statutes, or legal procedures from Oman when possible. Remember that the context may include Arabic text, which is common in Omani law.
-
-Context: {context}
-
-Question: {question}
-
-Answer:"""
-                
-                QA_PROMPT = PromptTemplate(
-                    template=template,
-                    input_variables=["context", "question"]
-                )
-                
-                # Use the OpenRouter API to access the powerful Qwen 1.5 model
-                llm = ChatOpenAI(
-                    temperature=0.0,
-                    model="qwen/qwen1.5-110b",
-                    openai_api_key=OPENROUTER_API_KEY,
-                    openai_api_base="https://openrouter.ai/api/v1",
-                    max_tokens=1000,
-                    additional_kwargs={
-                        "headers": {
-                            "HTTP-Referer": "https://sharia-ai.om",
-                            "X-Title": "ShariaAI - Omani Legal Assistant"
-                        }
-                    }
-                )
-                
-                # Create the QA chain with error handling
-                status_text.text("تهيئة نموذج الذكاء الاصطناعي...")
-                try:
-                    # Create a proper QA chain
-                    qa_chain = RetrievalQA.from_chain_type(
-                        llm=llm,
-                        chain_type="stuff",
-                        retriever=retriever,
-                        chain_type_kwargs={"prompt": QA_PROMPT},
-                        return_source_documents=True
-                    )
-                    chain_created = True
-                except Exception as e:
-                    logging.error(f"Error creating QA chain: {e}", exc_info=True)
-                    qa_chain = None
-                    chain_created = False
-                
-                # Store in session state with successful files
-                st.session_state.documents = successful_files
-                st.session_state.vector_db = vector_db
-                st.session_state.qa_chain = qa_chain
-                st.session_state.data_loaded = True
-                
-                # Success message based on what actually worked
-                if chain_created:
-                    status_text.text("تم تحميل وتجهيز المستندات القانونية بنجاح!")
-                else:
-                    status_text.text("تم تحميل المستندات، ولكن قد تكون بعض الميزات محدودة.")
-                progress_bar.progress(1.0)
-                status_text.empty()
-                
-                # Show success message with count of successfully loaded documents
-                st.success(f"تم تحميل {len(st.session_state.documents)} مستند قانوني بنجاح!")
+                if st.session_state.vector_db is not None:
+                    st.session_state.qa_chain = create_qa_chain(st.session_state.vector_db)
+                    st.session_state.data_loaded = True
+                    st.success(f"Successfully loaded {len(st.session_state.documents)} legal documents!")
             else:
-                # Clear the progress indicators
-                progress_bar.empty()
-                status_text.empty()
-                
-                st.error("لم يتم العثور على محتوى في المستندات القانونية.")
+                st.error("Could not process any legal documents.")
                 
         except Exception as e:
-            # Clear the progress indicators
-            progress_bar.empty()
-            status_text.empty()
-            
-            st.error(f"خطأ في تحميل المستندات القانونية: {str(e)}")
-            logging.error(f"Error loading legal documents: {str(e)}", exc_info=True)
+            st.error(f"Error loading legal documents: {str(e)}")
 
 # Load legal documents on app startup
 load_legal_documents()
@@ -436,18 +298,19 @@ with tabs[0]:
     # Layout for the chat input with voice button
     input_col1, input_col2 = st.columns([5, 1])
     
-    # Place voice input directly into chat input field
-    placeholder = "Ask about Omani law..."
+    # Text display for voice transcription
+    if st.session_state.voice_input_text:
+        st.info(f"Voice input: {st.session_state.voice_input_text}")
+        if st.button("Send voice input"):
+            # Set as query to process
+            user_query = st.session_state.voice_input_text
+            # Clear the voice input after sending
+            st.session_state.voice_input_text = None
+            st.rerun()
     
     with input_col1:
-        # Chat input field with voice transcription if available
-        if st.session_state.voice_input_text:
-            user_query = st.chat_input(st.session_state.voice_input_text)
-            # Clear voice input after user sends or modifies
-            if user_query:
-                st.session_state.voice_input_text = None
-        else:
-            user_query = st.chat_input(placeholder)
+        # Regular text input field
+        user_query = st.chat_input("Ask about Omani law...")
     
     with input_col2:
         # Voice recording component - now much simpler

@@ -36,40 +36,19 @@ class AudioProcessor:
         return self.whisper_model
     
     def transcribe_audio(self, audio_file_path):
-        """Transcribe audio using Whisper model with improved error handling."""
-        if not audio_file_path or not os.path.exists(audio_file_path):
-            st.error(f"Audio file not found: {audio_file_path}")
-            return ""
-            
+        """Transcribe audio using Whisper model."""
         try:
-            # Verify the audio file size
-            file_size = os.path.getsize(audio_file_path)
-            if file_size < 100:  # If file is suspiciously small
-                st.warning(f"Audio file is very small ({file_size} bytes), transcription may fail")
-            
-            st.info("Loading Whisper model for transcription...")
-            
-            # Load the Whisper model with explicit feedback
+            # Load the Whisper model
             model = self._load_whisper_model()
             
-            # Transcribe the audio with a progress indicator
-            with st.spinner("Transcribing audio... This may take a moment"):
-                st.info(f"Starting transcription of file: {os.path.basename(audio_file_path)}")
-                result = model.transcribe(audio_file_path)
-                
-                # Return the transcribed text with some diagnostics
-                transcribed_text = result["text"]
-                
-                if transcribed_text and transcribed_text.strip():
-                    st.success("Transcription successful!")
-                    return transcribed_text
-                else:
-                    st.warning("Transcription completed but no text was detected. Try speaking louder or checking your microphone.")
-                    return ""
+            # Transcribe the audio
+            result = model.transcribe(audio_file_path)
+            
+            # Return the transcribed text
+            return result["text"]
             
         except Exception as e:
             st.error(f"Error transcribing audio: {str(e)}")
-            logging.error(f"Transcription error: {str(e)}", exc_info=True)
             return ""
     
     def record_and_transcribe(self):
@@ -292,7 +271,7 @@ class AudioProcessor:
         # Return the transcription
         return st.session_state.voice_transcription
     
-    def record_audio_simple(self, duration=10):
+    def record_audio_simple(self, duration=5):
         """Record audio using PyAudio directly without WebRTC.
         Returns the path to the recorded audio file."""
         try:
@@ -301,97 +280,45 @@ class AudioProcessor:
             temp_filename = temp_file.name
             temp_file.close()
             
-            st.info("Setting up audio capture...")
-            
             # Set up PyAudio
             p = pyaudio.PyAudio()
             
-            # Configure audio stream with error handling
-            try:
-                stream = p.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    frames_per_buffer=1024
-                )
-            except Exception as e:
-                st.error(f"Could not open microphone: {str(e)}")
-                p.terminate()
-                return None
+            # Configure audio stream
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=1024
+            )
             
             # Collect audio data
             st.toast("Recording started...", icon="🎤")
             frames = []
             
-            # Show a progress bar for recording
-            progress_text = "Recording your voice... (longer recording for better results)"
-            duration_seconds = duration
-            
-            progress_bar = st.progress(0, text=progress_text)
-            
-            # Record with progress bar
-            try:
-                for i in range(duration_seconds):
-                    # Record 1 second of audio
-                    for j in range(int(16000/1024)):
-                        try:
-                            data = stream.read(1024, exception_on_overflow=False)
-                            frames.append(data)
-                        except Exception as e:
-                            st.warning(f"Audio capture issue: {str(e)}")
-                    
-                    # Update progress bar
-                    progress = (i + 1) / duration_seconds
-                    progress_bar.progress(progress, text=f"{progress_text} {i+1}/{duration_seconds}s")
-                    
-            except KeyboardInterrupt:
-                pass
-            finally:
-                # Clean up regardless of errors
-                progress_bar.empty()
+            # Record for the specified duration (default 5 seconds)
+            for i in range(0, int(16000 / 1024 * duration)):
+                data = stream.read(1024)
+                frames.append(data)
             
             # Stop and close the stream
             stream.stop_stream()
             stream.close()
             p.terminate()
             
-            # Check if we got any audio data
-            if not frames:
-                st.error("No audio data was captured. Please check your microphone.")
-                return None
-                
             st.toast("Recording complete!", icon="✅")
             
             # Save the recorded audio to the temporary file
-            try:
-                wf = wave.open(temp_filename, 'wb')
-                wf.setnchannels(1)
-                wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
-                wf.setframerate(16000)
-                wf.writeframes(b''.join(frames))
-                wf.close()
-                
-                # Verify the file was created successfully
-                if os.path.exists(temp_filename) and os.path.getsize(temp_filename) > 0:
-                    st.success(f"Audio saved successfully ({os.path.getsize(temp_filename)} bytes)")
-                    
-                    # Optional: Let user hear what was recorded
-                    with open(temp_filename, "rb") as audio_file:
-                        audio_bytes = audio_file.read()
-                        st.audio(audio_bytes, format="audio/wav")
-                    
-                    return temp_filename
-                else:
-                    st.error("Audio file is empty or was not created properly")
-                    return None
-            except Exception as e:
-                st.error(f"Error saving audio file: {str(e)}")
-                return None
-                
+            wf = wave.open(temp_filename, 'wb')
+            wf.setnchannels(1)
+            wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(16000)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+            
+            return temp_filename
         except Exception as e:
             st.error(f"Error recording audio: {str(e)}")
-            logging.error(f"Audio recording error: {str(e)}")
             return None
     
     def _process_chat_audio(self):

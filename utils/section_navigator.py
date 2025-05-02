@@ -1,14 +1,12 @@
 """
 Section Navigator for ShariaAI Omani Legal Assistant.
 This module enables hierarchical browsing and navigation of legal documents with Arabic support.
-Integrated with AI-powered translation for better bilingual support.
 """
 import re
 import fitz  # PyMuPDF
 import streamlit as st
 import logging
 from typing import Dict, List, Tuple, Optional
-from utils.translation_service import get_translation_service
 
 class LegalSection:
     """Represents a section of a legal document with hierarchical structure."""
@@ -158,56 +156,50 @@ class SectionNavigator:
             
             # If no sections were found, try a more aggressive approach to find structure
             if not sections_found:
-                logging.info(f"Using alternate section detection for document: {doc_name}")
+                st.warning(f"No standard sections found in document: {doc_name}. Trying alternate section detection...")
                 
-                # Safely get spinner text with fallback if translation fails
-                try:
-                    spinner_text = get_translation_service().translate_to_arabic(f"تحليل محتوى المستند: {doc_name}...")
-                except Exception as e:
-                    logging.error(f"Translation error in section navigator: {e}")
-                    spinner_text = f"تحليل محتوى المستند: {doc_name}..."
+                # Reprocess with more general patterns
+                fallback_patterns = [
+                    # Match any line that starts with a number followed by a period
+                    re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),
                     
-                with st.spinner(spinner_text):
-                    fallback_patterns = [
-                        # Match any line that starts with a number followed by a period
-                        re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),
-                        
-                        # Match any capitalized line or line with bold formatting (possible section heading)
-                        re.compile(r'^([A-Z][A-Z\s]+|[؀-ۿ][؀-ۿ\s]+)[:\.\s-]*(.*?)$', re.MULTILINE)
-                    ]
+                    # Match any capitalized line or line with bold formatting (possible section heading)
+                    re.compile(r'^([A-Z][A-Z\s]+|[أ-ي][أ-ي\s]+)[:\.\s-]*(.*?)$', re.MULTILINE)
+                ]
+                
+                # Process each page with fallback patterns
+                for page_num, page in enumerate(doc):
+                    text = page.get_text()
+                    page_sections_found = False
                     
-                    for page_num, page in enumerate(doc):
-                        text = page.get_text()
-                        page_sections_found = False
+                    for pattern in fallback_patterns:
+                        matches = pattern.finditer(text)
+                        for match in matches:
+                            page_sections_found = True
+                            if len(match.groups()) >= 1:
+                                marker = match.group(1)
+                                title_text = match.group(2).strip() if len(match.groups()) > 1 else ""
+                                
+                                # Create a section with whatever we found
+                                title = f"{marker}: {title_text[:50]}..." if title_text else f"{marker}"
+                                new_section = LegalSection(title, "", 1, root)
+                                new_section.source_doc = doc_name
+                                new_section.page_num = page_num
+                                
+                                # Add to root
+                                root.add_child(new_section)
+                    
+                    # If still no sections, create a page-based section
+                    if not page_sections_found and not sections_found:
+                        # Create a section for this page
+                        page_title = f"Page {page_num+1}"
+                        page_section = LegalSection(page_title, text, 1, root)
+                        page_section.source_doc = doc_name
+                        page_section.page_num = page_num
                         
-                        for pattern in fallback_patterns:
-                            matches = pattern.finditer(text)
-                            for match in matches:
-                                page_sections_found = True
-                                if len(match.groups()) >= 1:
-                                    marker = match.group(1)
-                                    title_text = match.group(2).strip() if len(match.groups()) > 1 else ""
-                                    
-                                    # Create a section with whatever we found
-                                    title = f"{marker}: {title_text[:50]}..." if title_text else f"{marker}"
-                                    new_section = LegalSection(title, "", 1, root)
-                                    new_section.source_doc = doc_name
-                                    new_section.page_num = page_num
-                                    
-                                    # Add to root
-                                    root.add_child(new_section)
-                        
-                        # If still no sections, create a page-based section
-                        if not page_sections_found and not sections_found:
-                            # Create a section for this page
-                            page_title = f"صفحة {page_num+1}"  # Arabic "Page"
-                            page_section = LegalSection(page_title, text, 1, root)
-                            page_section.source_doc = doc_name
-                            page_section.page_num = page_num
-                            
-                            # Add to root
-                            root.add_child(page_section)
-                            sections_found = True
+                        # Add to root
+                        root.add_child(page_section)
+                        sections_found = True
             
             # Store the document
             self.documents[doc_name] = root
@@ -215,16 +207,16 @@ class SectionNavigator:
             # Clean up
             doc.close()
             
-            # Report success or failure to logs only, not to the UI
+            # Report success or partial success
             if sections_found:
-                logging.info(f"Loaded document: {doc_name} with {len(root.children)} sections")
+                st.success(f"Loaded document: {doc_name} with {len(root.children)} sections")
                 return True
             else:
-                logging.warning(f"Document loaded but no sections identified: {doc_name}")
+                st.warning(f"Document loaded but no sections identified: {doc_name}")
                 return True  # Still return True as we did create a basic structure
         
         except Exception as e:
-            # Only log the error to console, don't display to user
+            st.error(f"Error loading document for section navigation: {str(e)}")
             logging.error(f"Section navigator error: {str(e)}", exc_info=True)
             return False
     
@@ -288,27 +280,18 @@ class SectionNavigator:
         return section
     
     def render_section_navigator(self):
-        """Render the section navigator interface in Streamlit with AI-powered translation."""
+        """Render the section navigator interface in Streamlit."""
         # Select document
-        st.subheader(get_translation_service().translate_to_arabic("Document Selection"))
+        st.subheader("Document Selection")
         
         # Get document list and ensure it's not empty
         documents = self.get_documents()
         if not documents:
-            st.warning(get_translation_service().translate_to_arabic("No documents loaded. Please ensure documents are loaded first."))
+            st.warning("No documents loaded. Please ensure documents are loaded first.")
             return
         
         # Document selector
-        selected_doc = st.selectbox(get_translation_service().translate_to_arabic("Select a document"), documents)
-        
-        # Language selector for interface
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            display_language = st.radio(
-                get_translation_service().translate_to_arabic("Display Language"),
-                ["Arabic", "English", "Bilingual"],
-                index=0  # Default to Arabic
-            )
+        selected_doc = st.selectbox("Select a document", documents)
         
         if selected_doc:
             # Get sections
@@ -319,11 +302,8 @@ class SectionNavigator:
                 section_titles = [section.title for section in sections]
                 
                 # Section selector
-                nav_title = get_translation_service().translate_to_arabic("Section Navigation")
-                st.subheader(nav_title)
-                
-                select_section_text = get_translation_service().translate_to_arabic("Select a section")
-                selected_section_title = st.selectbox(select_section_text, section_titles)
+                st.subheader("Section Navigation")
+                selected_section_title = st.selectbox("Select a section", section_titles)
                 
                 if selected_section_title:
                     # Find the selected section
@@ -331,89 +311,32 @@ class SectionNavigator:
                     
                     if selected_section:
                         # Display section content
-                        content_header = get_translation_service().translate_to_arabic("Section Content")
-                        st.subheader(content_header)
+                        st.subheader("Section Content")
                         
                         # Add metadata
-                        doc_info = get_translation_service().translate_to_arabic(f"Document: {selected_doc} | Page: {selected_section.page_num + 1}")
-                        st.info(doc_info)
+                        st.info(f"Document: {selected_doc} | Page: {selected_section.page_num + 1}")
                         
-                        # Show section title
+                        # Show section content
                         st.markdown(f"### {selected_section.title}")
                         
-                        # Clean and display the content with translation if needed
+                        # Clean and display the content
                         content = selected_section.content.strip()
                         if content:
-                            if display_language == "Arabic":
-                                # Translate content to Arabic if it contains mostly English
-                                translated_content = get_translation_service().translate(content, "Arabic")
-                                st.markdown(translated_content)
-                            elif display_language == "English":
-                                # Translate content to English if it contains mostly Arabic
-                                translated_content = get_translation_service().translate(content, "English")
-                                st.markdown(translated_content)
-                            else:  # Bilingual
-                                # Show both original and translated versions
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown("#### " + get_translation_service().translate_to_arabic("Original"))
-                                    st.markdown(content)
-                                with col2:
-                                    # Detect language and translate to the other
-                                    arabic_chars = sum(1 for c in content if '\u0600' <= c <= '\u06FF')
-                                    if arabic_chars > len(content) / 2:
-                                        # Content is mostly Arabic, translate to English
-                                        st.markdown("#### " + get_translation_service().translate_to_arabic("English Translation"))
-                                        translated = get_translation_service().translate(content, "English", "Arabic")
-                                    else:
-                                        # Content is mostly English, translate to Arabic
-                                        st.markdown("#### " + get_translation_service().translate_to_arabic("Arabic Translation"))
-                                        translated = get_translation_service().translate(content, "Arabic", "English")
-                                    st.markdown(translated)
+                            st.markdown(content)
                         else:
-                            no_content_msg = get_translation_service().translate_to_arabic("No content available for this section.")
-                            st.write(no_content_msg)
+                            st.write("No content available for this section.")
                         
                         # If the section has subsections, show them
                         if selected_section.children:
-                            subsections_title = get_translation_service().translate_to_arabic("Subsections")
-                            st.subheader(subsections_title)
-                            
+                            st.subheader("Subsections")
                             for subsection in selected_section.children:
                                 with st.expander(subsection.title):
-                                    subsection_content = subsection.content
-                                    if display_language == "Arabic":
-                                        # Translate subsection content to Arabic
-                                        translated_subsection = get_translation_service().translate(subsection_content, "Arabic")
-                                        st.markdown(translated_subsection)
-                                    elif display_language == "English":
-                                        # Translate subsection content to English
-                                        translated_subsection = get_translation_service().translate(subsection_content, "English")
-                                        st.markdown(translated_subsection)
-                                    else:  # Bilingual
-                                        # Show both original and translated
-                                        st.markdown("**" + get_translation_service().translate_to_arabic("Original") + "**")
-                                        st.markdown(subsection_content)
-                                        st.markdown("---")
-                                        
-                                        # Detect language and translate to the other
-                                        arabic_chars = sum(1 for c in subsection_content if '\u0600' <= c <= '\u06FF')
-                                        if arabic_chars > len(subsection_content) / 2:
-                                            # Content is mostly Arabic, translate to English
-                                            st.markdown("**" + get_translation_service().translate_to_arabic("English Translation") + "**")
-                                            translated = get_translation_service().translate(subsection_content, "English", "Arabic")
-                                        else:
-                                            # Content is mostly English, translate to Arabic
-                                            st.markdown("**" + get_translation_service().translate_to_arabic("Arabic Translation") + "**")
-                                            translated = get_translation_service().translate(subsection_content, "Arabic", "English")
-                                        st.markdown(translated)
+                                    st.markdown(subsection.content)
             else:
-                warning_msg = get_translation_service().translate_to_arabic(f"No sections found in document: {selected_doc}")
-                st.warning(warning_msg)
+                st.warning(f"No sections found in document: {selected_doc}")
                 
                 # Offer troubleshooting option
-                troubleshoot_btn = get_translation_service().translate_to_arabic("Try alternate section detection")
-                if st.button(troubleshoot_btn):
+                if st.button("Try alternate section detection"):
                     # Remove the current document from the map
                     if selected_doc in self.documents:
                         del self.documents[selected_doc]
@@ -427,9 +350,7 @@ class SectionNavigator:
                         # Try loading with more aggressive patterns
                         success = self.load_document(doc_path)
                         if success:
-                            success_msg = get_translation_service().translate_to_arabic("Document reloaded with alternate detection")
-                            st.success(success_msg)
+                            st.success("Document reloaded with alternate detection")
                             st.rerun()
                     else:
-                        error_msg = get_translation_service().translate_to_arabic("Unable to find original document path for reloading")
-                        st.error(error_msg)
+                        st.error("Unable to find original document path for reloading")
