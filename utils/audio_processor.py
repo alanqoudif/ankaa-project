@@ -223,3 +223,126 @@ class AudioProcessor:
                 return st.session_state.transcription
         
         return None
+    
+    def chat_voice_recorder(self):
+        """Compact voice recorder component for the chat interface."""
+        # Create container for voice recording UI
+        voice_container = st.container()
+        
+        with voice_container:
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                # Initialize session state for voice recording
+                if "chat_recording" not in st.session_state:
+                    st.session_state.chat_recording = False
+                if "chat_transcription" not in st.session_state:
+                    st.session_state.chat_transcription = None
+                
+                # Create a queue to store audio frames if not existing
+                if "chat_audio_frames" not in st.session_state:
+                    st.session_state.chat_audio_frames = queue.Queue()
+                
+                # Record button
+                if not st.session_state.chat_recording:
+                    if st.button("🎤 Voice Input", key="start_chat_recording"):
+                        st.session_state.chat_recording = True
+                        st.session_state.chat_audio_frames = queue.Queue()  # Reset queue
+                        st.experimental_rerun()
+                else:
+                    if st.button("⏹️ Stop Recording", key="stop_chat_recording"):
+                        st.session_state.chat_recording = False
+                        # Process the recorded audio
+                        with st.spinner("Processing audio..."):
+                            transcription = self._process_chat_audio()
+                            if transcription and transcription.strip():
+                                st.session_state.chat_transcription = transcription
+                        st.experimental_rerun()
+            
+            with col2:
+                # Show recording status
+                if st.session_state.chat_recording:
+                    st.markdown("🔴 **Recording...**")
+        
+        # WebRTC streamer for audio recording
+        if st.session_state.chat_recording:
+            # Define callback functions for WebRTC
+            def video_frame_callback(frame):
+                # Just return the frame, we don't process video
+                return frame
+            
+            def audio_frame_callback(frame):
+                # Add the audio frame to the queue
+                st.session_state.chat_audio_frames.put(frame)
+                return frame
+            
+            # Configure WebRTC
+            rtc_config = RTCConfiguration(
+                {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+            )
+            
+            # Create the WebRTC streamer
+            webrtc_streamer(
+                key="chat-voice-recorder",
+                mode=WebRtcMode.SENDRECV,
+                rtc_configuration=rtc_config,
+                video_frame_callback=video_frame_callback,
+                audio_frame_callback=audio_frame_callback,
+                media_stream_constraints={"video": False, "audio": True},
+                async_processing=True,
+            )
+        
+        # Return the transcription if available
+        return st.session_state.chat_transcription
+    
+    def _process_chat_audio(self):
+        """Process audio frames from the chat recording and return transcription."""
+        try:
+            # Create a temporary file for the audio
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                temp_filename = temp_file.name
+                
+                # Get all frames from the queue
+                frames = []
+                while not st.session_state.chat_audio_frames.empty():
+                    frames.append(st.session_state.chat_audio_frames.get())
+                
+                if not frames:
+                    return None
+                
+                # Create a new audio container
+                container = av.open(temp_filename, mode='w')
+                stream = container.add_stream('pcm_s16le', rate=48000, channels=1)
+                
+                # Write the frames to the container
+                for frame in frames:
+                    try:
+                        for packet in stream.encode(frame):
+                            container.mux(packet)
+                    except Exception as e:
+                        pass  # Skip problematic frames
+                
+                # Flush any remaining packets
+                for packet in stream.encode(None):
+                    container.mux(packet)
+                
+                # Close the container
+                container.close()
+                
+                # Transcribe the audio
+                if os.path.exists(temp_filename) and os.path.getsize(temp_filename) > 0:
+                    # Transcribe the recorded audio
+                    transcription = self.transcribe_audio(temp_filename)
+                    return transcription
+                
+                return None
+        except Exception as e:
+            st.error(f"Error processing audio: {str(e)}")
+            return None
+        finally:
+            # Clean up temporary file
+            try:
+                if 'temp_filename' in locals() and os.path.exists(temp_filename):
+                    os.unlink(temp_filename)
+            except Exception:
+                pass

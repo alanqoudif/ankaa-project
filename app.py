@@ -282,29 +282,56 @@ with st.sidebar:
 
 
 # Create tabs for different features
-tabs = st.tabs(["Chat", "Section Navigator", "Document Browser", "Voice Query", "Provision Comparison", "Case Analysis", "Document Drafter"])
+tabs = st.tabs(["Chat", "Section Navigator", "Document Browser", "Provision Comparison", "Case Analysis", "Document Drafter"])
 
 # Tab 1: Chat Interface
 with tabs[0]:
-    # Chat interface layout with two columns
-    chat_col1, chat_col2 = st.columns([3, 1])
+    # Display chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
     
-    with chat_col1:
-        # Display chat messages
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    # Initialize chat transcription if not already done
+    if "chat_voice_input" not in st.session_state:
+        st.session_state.chat_voice_input = None
+    
+    # Chat input area with voice recording option
+    input_col1, input_col2 = st.columns([5, 1])
+    
+    with input_col1:
+        # Show transcription in the input field if available
+        placeholder_text = st.session_state.chat_voice_input if st.session_state.chat_voice_input else "Ask about Omani law..."
+        user_query = st.chat_input(placeholder_text)
+    
+    with input_col2:
+        # Voice input button and processing
+        chat_transcription = st.session_state.audio_processor.chat_voice_recorder()
         
-        # Chat input
-        user_query = st.chat_input("Ask about Omani law...")
-        
-        if user_query:
+        # If we have a new transcription, update the chat voice input
+        if chat_transcription and chat_transcription != st.session_state.chat_voice_input:
+            st.session_state.chat_voice_input = chat_transcription
+            st.experimental_rerun()
+    
+    # Clear transcription if a text query is submitted
+    if user_query and st.session_state.chat_voice_input:
+        if user_query != st.session_state.chat_voice_input:
+            st.session_state.chat_voice_input = None
+    
+    # Process the query from either text input or voice transcription
+    query_to_process = user_query or st.session_state.chat_voice_input
+    
+    if query_to_process and (not st.session_state.messages or 
+                          query_to_process != st.session_state.messages[-1].get("content", "") 
+                          if st.session_state.messages[-1]["role"] == "user" else True):
             # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": user_query})
+            st.session_state.messages.append({"role": "user", "content": query_to_process})
+            
+            # Clear voice input after processing
+            st.session_state.chat_voice_input = None
             
             # Display user message
             with st.chat_message("user"):
-                st.markdown(user_query)
+                st.markdown(query_to_process)
             
             # Generate and display assistant response
             with st.chat_message("assistant"):
@@ -312,7 +339,7 @@ with tabs[0]:
                     if st.session_state.qa_chain:
                         try:
                             # Use invoke instead of run to handle multiple return values
-                            result = st.session_state.qa_chain.invoke(user_query)
+                            result = st.session_state.qa_chain.invoke(query_to_process)
                             
                             # Extract the answer from the result
                             if isinstance(result, dict) and 'result' in result:
@@ -392,74 +419,8 @@ with tabs[2]:
         if st.button("Load Documents", key="load_docs_browser"):
             load_legal_documents()
 
-# Tab 4: Voice Query (Level 3 Feature)
+# Tab 4: Provision Comparison (Level 3 Feature)
 with tabs[3]:
-    st.header("Voice Query")
-    st.write("Ask questions about Omani law using your voice")
-    
-    # Create necessary session states for the voice query feature
-    if "voice_query_processed" not in st.session_state:
-        st.session_state.voice_query_processed = False
-    if "voice_query_result" not in st.session_state:
-        st.session_state.voice_query_result = None
-    
-    # Voice query interface
-    voice_query = st.session_state.audio_processor.get_voice_query()
-    
-    # Process query if we have a new one
-    if voice_query and (not st.session_state.voice_query_processed or 
-                        st.session_state.last_query != voice_query):
-        st.session_state.last_query = voice_query
-        
-        # Add voice query to chat history
-        st.session_state.messages.append({"role": "user", "content": voice_query})
-        
-        # Process the voice query
-        with st.spinner("Processing your question..."):
-            if st.session_state.qa_chain:
-                try:
-                    # Use invoke instead of run to handle multiple return values
-                    result = st.session_state.qa_chain.invoke(voice_query)
-                    
-                    # Extract the answer from the result
-                    if isinstance(result, dict) and 'result' in result:
-                        response = result['result']
-                        
-                        # Show source documents if available
-                        if 'source_documents' in result and result['source_documents']:
-                            sources = result['source_documents']
-                            response += "\n\n**Sources:**"
-                            for i, doc in enumerate(sources[:3]):  # Show up to 3 sources
-                                source = doc.metadata.get('source', 'Unknown')
-                                response += f"\n- {os.path.basename(source)}"
-                    else:
-                        response = str(result)
-                    
-                    # Store the response in session state
-                    st.session_state.voice_query_result = response
-                    st.session_state.voice_query_processed = True
-                    
-                    # Add to chat history
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                    
-                except Exception as e:
-                    error_msg = f"Error generating response: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.voice_query_result = error_msg
-                    st.session_state.voice_query_processed = True
-            else:
-                warning_msg = "Please load documents first to enable question answering."
-                st.warning(warning_msg)
-                st.session_state.voice_query_result = warning_msg
-                st.session_state.voice_query_processed = True
-    
-    # Display the stored response if available
-    if st.session_state.voice_query_processed and st.session_state.voice_query_result:
-        st.markdown("### Answer:")
-        st.markdown(st.session_state.voice_query_result)
-
-# Tab 5: Provision Comparison (Level 3 Feature)
-with tabs[4]:
     st.header("Legal Provision Comparison")
     st.write("Compare different legal provisions and see highlighted differences")
     
@@ -470,22 +431,21 @@ with tabs[4]:
         # Render the comparison interface
         st.session_state.legal_comparison.render_comparison_interface(pdf_files)
     else:
-        st.warning("Please load documents first to use the comparison feature.")
+        st.warning("Please load legal documents first to enable comparison.")
         
-        # Add a button to manually load documents
         if st.button("Load Documents", key="load_docs_comparison"):
             load_legal_documents()
 
-# Tab 6: Case Analysis (Level 4 Feature)
-with tabs[5]:
+# Tab 5: Case Analysis (Level 4 Feature)
+with tabs[4]:
     st.header("Case Analysis")
     st.write("Analyze legal cases with structured reasoning and step-by-step analysis")
     
     # Render the case analysis interface
     st.session_state.case_analyzer.render_case_analysis_interface()
 
-# Tab 7: Document Drafter (Level 4 Feature)
-with tabs[6]:
+# Tab 6: Document Drafter (Level 4 Feature)
+with tabs[5]:
     st.header("Document Drafter")
     st.write("Generate professional legal documents, letters, and memos")
     
