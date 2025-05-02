@@ -13,6 +13,8 @@ from utils.env_loader import load_env_vars
 from utils.section_navigator import SectionNavigator
 from utils.audio_processor import AudioProcessor
 from utils.legal_comparison import LegalComparison
+from utils.case_analyzer import CaseAnalyzer
+from utils.document_drafter import DocumentDrafter
 
 # Set page configuration
 st.set_page_config(
@@ -49,6 +51,10 @@ if "audio_processor" not in st.session_state:
     st.session_state.audio_processor = AudioProcessor()
 if "legal_comparison" not in st.session_state:
     st.session_state.legal_comparison = LegalComparison()
+if "case_analyzer" not in st.session_state:
+    st.session_state.case_analyzer = CaseAnalyzer()
+if "document_drafter" not in st.session_state:
+    st.session_state.document_drafter = DocumentDrafter()
 if "current_tab" not in st.session_state:
     st.session_state.current_tab = "Chat"
 
@@ -256,7 +262,7 @@ with st.sidebar:
 
 
 # Create tabs for different features
-tabs = st.tabs(["Chat", "Section Navigator", "Document Browser", "Voice Query", "Provision Comparison"])
+tabs = st.tabs(["Chat", "Section Navigator", "Document Browser", "Voice Query", "Provision Comparison", "Case Analysis", "Document Drafter"])
 
 # Tab 1: Chat Interface
 with tabs[0]:
@@ -429,6 +435,22 @@ with tabs[4]:
         # Add a button to manually load documents
         if st.button("Load Documents", key="load_docs_comparison"):
             load_legal_documents()
+
+# Tab 6: Case Analysis (Level 4 Feature)
+with tabs[5]:
+    st.header("Case Analysis")
+    st.write("Analyze legal cases with structured reasoning and step-by-step analysis")
+    
+    # Render the case analysis interface
+    st.session_state.case_analyzer.render_case_analysis_interface()
+
+# Tab 7: Document Drafter (Level 4 Feature)
+with tabs[6]:
+    st.header("Document Drafter")
+    st.write("Generate professional legal documents, letters, and memos")
+    
+    # Render the document drafter interface
+    st.session_state.document_drafter.render_document_drafter_interface()
 
 # Footer
 st.markdown("---")
