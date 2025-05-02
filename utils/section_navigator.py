@@ -158,50 +158,49 @@ class SectionNavigator:
             
             # If no sections were found, try a more aggressive approach to find structure
             if not sections_found:
-                st.warning(f"No standard sections found in document: {doc_name}. Trying alternate section detection...")
+                logging.info(f"Using alternate section detection for document: {doc_name}")
                 
-                # Reprocess with more general patterns
-                fallback_patterns = [
-                    # Match any line that starts with a number followed by a period
-                    re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),
-                    
-                    # Match any capitalized line or line with bold formatting (possible section heading)
-                    re.compile(r'^([A-Z][A-Z\s]+|[أ-ي][أ-ي\s]+)[:\.\s-]*(.*?)$', re.MULTILINE)
-                ]
-                
-                # Process each page with fallback patterns
-                for page_num, page in enumerate(doc):
-                    text = page.get_text()
-                    page_sections_found = False
-                    
-                    for pattern in fallback_patterns:
-                        matches = pattern.finditer(text)
-                        for match in matches:
-                            page_sections_found = True
-                            if len(match.groups()) >= 1:
-                                marker = match.group(1)
-                                title_text = match.group(2).strip() if len(match.groups()) > 1 else ""
-                                
-                                # Create a section with whatever we found
-                                title = f"{marker}: {title_text[:50]}..." if title_text else f"{marker}"
-                                new_section = LegalSection(title, "", 1, root)
-                                new_section.source_doc = doc_name
-                                new_section.page_num = page_num
-                                
-                                # Add to root
-                                root.add_child(new_section)
-                    
-                    # If still no sections, create a page-based section
-                    if not page_sections_found and not sections_found:
-                        # Create a section for this page
-                        page_title = f"Page {page_num+1}"
-                        page_section = LegalSection(page_title, text, 1, root)
-                        page_section.source_doc = doc_name
-                        page_section.page_num = page_num
+                with st.spinner(get_translation_service().translate_to_arabic(f"تحليل محتوى المستند: {doc_name}...")):
+                    fallback_patterns = [
+                        # Match any line that starts with a number followed by a period
+                        re.compile(r'^(\d+)[\.:\s-](.*?)$', re.MULTILINE),
                         
-                        # Add to root
-                        root.add_child(page_section)
-                        sections_found = True
+                        # Match any capitalized line or line with bold formatting (possible section heading)
+                        re.compile(r'^([A-Z][A-Z\s]+|[؀-ۿ][؀-ۿ\s]+)[:\.\s-]*(.*?)$', re.MULTILINE)
+                    ]
+                    
+                    for page_num, page in enumerate(doc):
+                        text = page.get_text()
+                        page_sections_found = False
+                        
+                        for pattern in fallback_patterns:
+                            matches = pattern.finditer(text)
+                            for match in matches:
+                                page_sections_found = True
+                                if len(match.groups()) >= 1:
+                                    marker = match.group(1)
+                                    title_text = match.group(2).strip() if len(match.groups()) > 1 else ""
+                                    
+                                    # Create a section with whatever we found
+                                    title = f"{marker}: {title_text[:50]}..." if title_text else f"{marker}"
+                                    new_section = LegalSection(title, "", 1, root)
+                                    new_section.source_doc = doc_name
+                                    new_section.page_num = page_num
+                                    
+                                    # Add to root
+                                    root.add_child(new_section)
+                        
+                        # If still no sections, create a page-based section
+                        if not page_sections_found and not sections_found:
+                            # Create a section for this page
+                            page_title = f"صفحة {page_num+1}"  # Arabic "Page"
+                            page_section = LegalSection(page_title, text, 1, root)
+                            page_section.source_doc = doc_name
+                            page_section.page_num = page_num
+                            
+                            # Add to root
+                            root.add_child(page_section)
+                            sections_found = True
             
             # Store the document
             self.documents[doc_name] = root
@@ -209,16 +208,16 @@ class SectionNavigator:
             # Clean up
             doc.close()
             
-            # Report success or partial success
+            # Report success or failure to logs only, not to the UI
             if sections_found:
-                st.success(f"Loaded document: {doc_name} with {len(root.children)} sections")
+                logging.info(f"Loaded document: {doc_name} with {len(root.children)} sections")
                 return True
             else:
-                st.warning(f"Document loaded but no sections identified: {doc_name}")
+                logging.warning(f"Document loaded but no sections identified: {doc_name}")
                 return True  # Still return True as we did create a basic structure
         
         except Exception as e:
-            st.error(f"Error loading document for section navigation: {str(e)}")
+            # Only log the error to console, don't display to user
             logging.error(f"Section navigator error: {str(e)}", exc_info=True)
             return False
     
