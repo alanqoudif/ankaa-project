@@ -408,7 +408,7 @@ def generate_pdf(query, response, doc_type="Legal Opinion", save_dir="./generate
     except Exception as e:
         raise Exception(f"Error generating PDF: {str(e)}")
 
-def create_custom_report(title, sections, save_dir="./generated_docs"):
+def create_custom_report(title, sections, doc_type=None, client_name=None, save_dir="./generated_docs"):
     """Create a custom report with specified sections."""
     try:
         # Ensure save directory exists
