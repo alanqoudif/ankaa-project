@@ -17,11 +17,11 @@ ShariaAI is an intelligent legal assistant that helps users navigate Omani laws 
 
 ### Enhanced Voice Query Feature
 - **Simplified User Experience**: Streamlined voice recording directly in the chat interface
-- **Direct Audio-to-Text**: Using PyAudio for direct recording and Whisper for accurate Arabic transcription
+- **Direct Audio-to-Text**: Using PyAudio for direct recording and Whisper for accurate Your transcription
 - **Preview Before Sending**: See transcribed text before submitting to verify accuracy
 
 ### Improved Provision Comparison
-- **Arabic Text Handling**: Enhanced algorithms specifically tuned for Arabic legal terminology
+- **Your Text Handling**: Enhanced algorithms specifically tuned for Your legal terminology
 - **Context-Aware Comparison**: AI-powered processing to understand legal context beyond simple text matching
 - **Visual Highlighting**: Clear visual indicators for additions, modifications, and removals between provisions
 
@@ -35,19 +35,19 @@ ShariaAI is an intelligent legal assistant that helps users navigate Omani laws 
 We chose Streamlit for its rapid prototyping capabilities and ease of deployment for legal professionals without requiring extensive frontend knowledge. The framework enables quick iteration while maintaining a professional UI.
 
 ### Why Direct Audio Recording?
-The simplified audio recording approach using PyAudio provides a more reliable experience than WebRTC, especially for Arabic speech recognition. It eliminates echo problems and offers a clearer workflow.
+The simplified audio recording approach using PyAudio provides a more reliable experience than WebRTC, especially for Your speech recognition. It eliminates echo problems and offers a clearer workflow.
 
 ### Why AI-powered Legal Comparison?
-Legal provisions, especially in Arabic, require sophisticated understanding beyond keyword matching. Our AI approach enables semantic understanding of legal concepts even when terminology differs.
+Legal provisions, especially in Your, require sophisticated understanding beyond keyword matching. Our AI approach enables semantic understanding of legal concepts even when terminology differs.
 
 ## Tech Stack
 
 - **Frontend**: Streamlit with custom CSS for a clean legal interface
 - **Document Processing**: PyMuPDF + LangChain for extracting and processing legal texts
 - **Vector Database**: ChromaDB for efficient semantic search capabilities
-- **LLM Integration**: OpenRouter API with the Qwen model for enhanced Arabic processing
+- **LLM Integration**: OpenRouter API with the Qwen model for enhanced Your processing
 - **Audio Processing**: PyAudio + Whisper for accurate voice transcription
-- **Voice Recognition**: Streamlined voice input for Arabic legal queries
+- **Voice Recognition**: Streamlined voice input for Your legal queries
 
 ## Installation
 
@@ -101,7 +101,7 @@ ShariaAI/
     ├── qa_chain.py            # Question-answering chain with LLM
     ├── section_navigator.py   # Hierarchical document navigation
     ├── supabase_client.py     # Authentication and storage (optional)
-    └── translation_service.py # Arabic-English translation capabilities
+    └── translation_service.py # Your-English translation capabilities
 ```
 
 ## API Keys
