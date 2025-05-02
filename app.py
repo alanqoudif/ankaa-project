@@ -139,6 +139,19 @@ def setup_vector_db(documents, persist_directory="./omani_laws"):
 def create_qa_chain(vector_db):
     """Create a RetrievalQA chain with the given vector database."""
     try:
+        # Initialize the language model with OpenRouter API using Qwen model
+        llm = ChatOpenAI(
+            openai_api_key=OPENROUTER_API_KEY,
+            model="qwen/qwen3-235b-a22b:free",  # Using Qwen 23.5B model (free tier)
+            temperature=0.1,
+            max_tokens=1024,  # Increased token limit for Qwen model
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/alanqoudif/ankaa-project",
+                "X-Title": "ShariaAI - Omani Legal Assistant"
+            }
+        )
+        
         # Define prompt template
         qa_template = """You are ShariaAI, an AI-powered legal assistant specializing in Omani law.
         Answer the user's question based on the provided legal context. If the answer cannot be found in the context, 
@@ -150,40 +163,24 @@ def create_qa_chain(vector_db):
         CONTEXT: {context}
 
         ANSWER:"""
-
-        qa_prompt = PromptTemplate(
+        
+        prompt = PromptTemplate(
             template=qa_template,
-            input_variables=["question", "context"]
+            input_variables=["context", "question"]
         )
         
-        # Set up the language model with OpenRouter
-        # OpenRouter requires a different base_url and custom headers
-        llm = ChatOpenAI(
-            api_key=OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
-            model="openai/gpt-3.5-turbo",  # Prefix with provider
-            temperature=0,
-            max_tokens=1000,
-            # Add OpenRouter specific headers
-            default_headers={
-                "HTTP-Referer": "https://github.com/alanqoudif/ankaa-project",  # Optional
-                "X-Title": "ShariaAI Omani Legal Assistant"  # Optional
-            }
-        )
-        
-        # Note: LlamaIndex fallback can be implemented here for offline operation
-        # if needed in the future using LLAMAINDEX_API_KEY
-        
-        # Create the retrieval QA chain
+        # Create the chain
+        chain_type_kwargs = {"prompt": prompt}
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
-            retriever=vector_db.as_retriever(search_kwargs={"k": 5}),
-            chain_type_kwargs={"prompt": qa_prompt}
+            retriever=vector_db.as_retriever(search_kwargs={"k": 3}),
+            chain_type_kwargs=chain_type_kwargs,
+            return_source_documents=True,
         )
         
         return qa_chain
-    
+        
     except Exception as e:
         st.error(f"Error creating QA chain: {str(e)}")
         return None
@@ -282,7 +279,23 @@ with tabs[0]:
                 with st.spinner("Thinking..."):
                     if st.session_state.qa_chain:
                         try:
-                            response = st.session_state.qa_chain.run(user_query)
+                            # Use invoke instead of run to handle multiple return values
+                            result = st.session_state.qa_chain.invoke(user_query)
+                            
+                            # Extract the answer from the result
+                            if isinstance(result, dict) and 'result' in result:
+                                response = result['result']
+                                
+                                # Show source documents if available
+                                if 'source_documents' in result and result['source_documents']:
+                                    sources = result['source_documents']
+                                    response += "\n\n**Sources:**"
+                                    for i, doc in enumerate(sources[:3]):  # Show up to 3 sources
+                                        source = doc.metadata.get('source', 'Unknown')
+                                        response += f"\n- {os.path.basename(source)}"
+                            else:
+                                response = str(result)
+                                
                             st.markdown(response)
                             st.session_state.messages.append({"role": "assistant", "content": response})
                         except Exception as e:

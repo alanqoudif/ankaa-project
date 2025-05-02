@@ -29,11 +29,17 @@ def create_qa_chain(vector_db, use_openrouter=True):
     try:
         # Set up the language model
         if use_openrouter:
+            # Configure OpenRouter with proper base URL and headers
             llm = ChatOpenAI(
                 openai_api_key=OPENROUTER_API_KEY,
                 model="openai/gpt-4o",
                 temperature=0,
-                max_tokens=2000
+                max_tokens=2000,
+                base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://github.com/alanqoudif/ankaa-project",
+                    "X-Title": "ShariaAI - Omani Legal Assistant"
+                }
             )
         else:
             # Fallback to local model in future implementation
@@ -41,7 +47,12 @@ def create_qa_chain(vector_db, use_openrouter=True):
                 openai_api_key=OPENROUTER_API_KEY,
                 model="openai/gpt-3.5-turbo",
                 temperature=0,
-                max_tokens=2000
+                max_tokens=2000,
+                base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://github.com/alanqoudif/ankaa-project",
+                    "X-Title": "ShariaAI - Omani Legal Assistant"
+                }
             )
         
         # Create the retrieval QA chain
