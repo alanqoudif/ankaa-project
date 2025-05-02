@@ -298,19 +298,18 @@ with tabs[0]:
     # Layout for the chat input with voice button
     input_col1, input_col2 = st.columns([5, 1])
     
-    # Text display for voice transcription
-    if st.session_state.voice_input_text:
-        st.info(f"Voice input: {st.session_state.voice_input_text}")
-        if st.button("Send voice input"):
-            # Set as query to process
-            user_query = st.session_state.voice_input_text
-            # Clear the voice input after sending
-            st.session_state.voice_input_text = None
-            st.rerun()
+    # Place voice input directly into chat input field
+    placeholder = "Ask about Omani law..."
     
     with input_col1:
-        # Regular text input field
-        user_query = st.chat_input("Ask about Omani law...")
+        # Chat input field with voice transcription if available
+        if st.session_state.voice_input_text:
+            user_query = st.chat_input(st.session_state.voice_input_text)
+            # Clear voice input after user sends or modifies
+            if user_query:
+                st.session_state.voice_input_text = None
+        else:
+            user_query = st.chat_input(placeholder)
     
     with input_col2:
         # Voice recording component - now much simpler
