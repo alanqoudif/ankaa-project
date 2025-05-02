@@ -291,43 +291,42 @@ with tabs[0]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Initialize chat transcription if not already done
-    if "chat_voice_input" not in st.session_state:
-        st.session_state.chat_voice_input = None
+    # Setup voice input state variables
+    if "voice_input_text" not in st.session_state:
+        st.session_state.voice_input_text = None
     
-    # Chat input area with voice recording option
+    # Layout for the chat input with voice button
     input_col1, input_col2 = st.columns([5, 1])
     
+    # Text display for voice transcription
+    if st.session_state.voice_input_text:
+        st.info(f"Voice input: {st.session_state.voice_input_text}")
+        if st.button("Send voice input"):
+            # Set as query to process
+            user_query = st.session_state.voice_input_text
+            # Clear the voice input after sending
+            st.session_state.voice_input_text = None
+            st.rerun()
+    
     with input_col1:
-        # Show transcription in the input field if available
-        placeholder_text = st.session_state.chat_voice_input if st.session_state.chat_voice_input else "Ask about Omani law..."
-        user_query = st.chat_input(placeholder_text)
+        # Regular text input field
+        user_query = st.chat_input("Ask about Omani law...")
     
     with input_col2:
-        # Voice input button and processing
-        chat_transcription = st.session_state.audio_processor.chat_voice_recorder()
-        
-        # If we have a new transcription, update the chat voice input
-        if chat_transcription and chat_transcription != st.session_state.chat_voice_input:
-            st.session_state.chat_voice_input = chat_transcription
-            st.experimental_rerun()
+        # Voice recording component - now much simpler
+        voice_transcription = st.session_state.audio_processor.chat_voice_recorder()
+        if voice_transcription:
+            st.session_state.voice_input_text = voice_transcription
+            st.rerun()
     
-    # Clear transcription if a text query is submitted
-    if user_query and st.session_state.chat_voice_input:
-        if user_query != st.session_state.chat_voice_input:
-            st.session_state.chat_voice_input = None
-    
-    # Process the query from either text input or voice transcription
-    query_to_process = user_query or st.session_state.chat_voice_input
-    
-    if query_to_process and (not st.session_state.messages or 
-                          query_to_process != st.session_state.messages[-1].get("content", "") 
-                          if st.session_state.messages[-1]["role"] == "user" else True):
+    # Process the query (from text input only for now)
+    if user_query and (not st.session_state.messages or 
+                      user_query != st.session_state.messages[-1].get("content", "") 
+                      if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" else True):
             # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": query_to_process})
+            st.session_state.messages.append({"role": "user", "content": user_query})
             
-            # Clear voice input after processing
-            st.session_state.chat_voice_input = None
+            # No need to clear voice input since we're using a different variable now
             
             # Display user message
             with st.chat_message("user"):
@@ -339,7 +338,7 @@ with tabs[0]:
                     if st.session_state.qa_chain:
                         try:
                             # Use invoke instead of run to handle multiple return values
-                            result = st.session_state.qa_chain.invoke(query_to_process)
+                            result = st.session_state.qa_chain.invoke(user_query)
                             
                             # Extract the answer from the result
                             if isinstance(result, dict) and 'result' in result:

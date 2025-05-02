@@ -1,14 +1,18 @@
 """Audio processing module for ShariaAI - Voice transcription for legal queries."""
 import os
-import tempfile
-import streamlit as st
-import numpy as np
-import whisper
 import time
 import queue
-from threading import Thread
-import av
+import wave
+import tempfile
+import pyaudio
 import logging
+from typing import List, Dict, Any, Optional
+from threading import Thread
+
+import av
+import numpy as np
+import streamlit as st
+import whisper
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from utils.env_loader import load_env_vars
 
@@ -225,75 +229,97 @@ class AudioProcessor:
         return None
     
     def chat_voice_recorder(self):
-        """Compact voice recorder component for the chat interface."""
-        # Create container for voice recording UI
-        voice_container = st.container()
+        """Simple voice recorder component for the chat interface that directly records audio and transcribes it."""
+        # Initialize session state for voice recording
+        if "voice_is_recording" not in st.session_state:
+            st.session_state.voice_is_recording = False
+        if "voice_transcription" not in st.session_state:
+            st.session_state.voice_transcription = None
         
-        with voice_container:
+        # Simple record button that triggers audio recording
+        if not st.session_state.voice_is_recording:
+            # Show record button
+            if st.button("🎤 Voice Input", key="voice_record_btn"):
+                st.session_state.voice_is_recording = True
+                st.rerun()
+        else:
+            # Show stop button
             col1, col2 = st.columns([3, 1])
-            
             with col1:
-                # Initialize session state for voice recording
-                if "chat_recording" not in st.session_state:
-                    st.session_state.chat_recording = False
-                if "chat_transcription" not in st.session_state:
-                    st.session_state.chat_transcription = None
-                
-                # Create a queue to store audio frames if not existing
-                if "chat_audio_frames" not in st.session_state:
-                    st.session_state.chat_audio_frames = queue.Queue()
-                
-                # Record button
-                if not st.session_state.chat_recording:
-                    if st.button("🎤 Voice Input", key="start_chat_recording"):
-                        st.session_state.chat_recording = True
-                        st.session_state.chat_audio_frames = queue.Queue()  # Reset queue
-                        st.rerun()
-                else:
-                    if st.button("⏹️ Stop Recording", key="stop_chat_recording"):
-                        st.session_state.chat_recording = False
-                        # Process the recorded audio
-                        with st.spinner("Processing audio..."):
-                            transcription = self._process_chat_audio()
+                if st.button("⏹️ Stop Recording", key="voice_stop_btn"):
+                    st.session_state.voice_is_recording = False
+                    # Record and transcribe audio
+                    with st.spinner("Transcribing your audio..."):
+                        # Use simple recording approach
+                        audio_file = self.record_audio_simple()
+                        if audio_file:
+                            # Transcribe the audio file
+                            transcription = self.transcribe_audio(audio_file)
+                            # Clean up the temporary file
+                            try:
+                                os.unlink(audio_file)
+                            except Exception:
+                                pass
+                            
                             if transcription and transcription.strip():
-                                st.session_state.chat_transcription = transcription
-                        st.rerun()
+                                st.session_state.voice_transcription = transcription
+                    st.rerun()
             
             with col2:
-                # Show recording status
-                if st.session_state.chat_recording:
-                    st.markdown("🔴 **Recording...**")
+                st.markdown("🔴 **Recording...**")
         
-        # WebRTC streamer for audio recording
-        if st.session_state.chat_recording:
-            # Define callback functions for WebRTC
-            def video_frame_callback(frame):
-                # Just return the frame, we don't process video
-                return frame
+        # Return the transcription
+        return st.session_state.voice_transcription
+    
+    def record_audio_simple(self, duration=5):
+        """Record audio using PyAudio directly without WebRTC.
+        Returns the path to the recorded audio file."""
+        try:
+            # Create a temporary file for recording
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            temp_filename = temp_file.name
+            temp_file.close()
             
-            def audio_frame_callback(frame):
-                # Add the audio frame to the queue
-                st.session_state.chat_audio_frames.put(frame)
-                return frame
+            # Set up PyAudio
+            p = pyaudio.PyAudio()
             
-            # Configure WebRTC
-            rtc_config = RTCConfiguration(
-                {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+            # Configure audio stream
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=1024
             )
             
-            # Create the WebRTC streamer
-            webrtc_streamer(
-                key="chat-voice-recorder",
-                mode=WebRtcMode.SENDRECV,
-                rtc_configuration=rtc_config,
-                video_frame_callback=video_frame_callback,
-                audio_frame_callback=audio_frame_callback,
-                media_stream_constraints={"video": False, "audio": True},
-                async_processing=True,
-            )
-        
-        # Return the transcription if available
-        return st.session_state.chat_transcription
+            # Collect audio data
+            st.toast("Recording started...", icon="🎤")
+            frames = []
+            
+            # Record for the specified duration (default 5 seconds)
+            for i in range(0, int(16000 / 1024 * duration)):
+                data = stream.read(1024)
+                frames.append(data)
+            
+            # Stop and close the stream
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            
+            st.toast("Recording complete!", icon="✅")
+            
+            # Save the recorded audio to the temporary file
+            wf = wave.open(temp_filename, 'wb')
+            wf.setnchannels(1)
+            wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(16000)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+            
+            return temp_filename
+        except Exception as e:
+            st.error(f"Error recording audio: {str(e)}")
+            return None
     
     def _process_chat_audio(self):
         """Process audio frames from the chat recording and return transcription."""
