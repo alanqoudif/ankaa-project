@@ -61,12 +61,41 @@ Legal provisions, especially in Your, require sophisticated understanding beyond
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
    ```
 
-3. Run the application:
+3. Install PyAudio dependencies first (required for voice recording):
+   - **macOS**:
+     ```bash
+     brew install portaudio
+     ```
+   - **Ubuntu/Debian**:
+     ```bash
+     sudo apt-get install python3-dev portaudio19-dev
+     ```
+   - **Windows**:
+     ```bash
+     pip install pipwin
+     pipwin install pyaudio
+     ```
+
+4. Install Python dependencies:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+   
+   If you encounter any issues with specific packages:
+   - If `pip` fails with `difflib3` error, this is a known issue. The package is not required.
+   - For PyAudio installation problems, install it separately with: `pip install pyaudio`
+
+5. Run the application:
    ```bash
    streamlit run app.py
+   ```
+
+6. For better performance, install Watchdog (optional):
+   ```bash
+   pip install watchdog
    ```
 
 ## Project Structure
